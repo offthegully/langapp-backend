@@ -1,0 +1,395 @@
+{
+  "info": {
+    "name": "Language Exchange Matchmaking API",
+    "description": "API collection for testing the language exchange matchmaking service",
+    "version": "1.0.0"
+  },
+  "variable": [
+    {
+      "key": "BASE_URL",
+      "value": "http://localhost:8080",
+      "type": "string"
+    },
+    {
+      "key": "USER_ID_A",
+      "value": "550e8400-e29b-41d4-a716-446655440001",
+      "type": "string"
+    },
+    {
+      "key": "USER_ID_B",
+      "value": "550e8400-e29b-41d4-a716-446655440002",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Health Check",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BASE_URL}}/health",
+          "host": ["{{BASE_URL}}"],
+          "path": ["health"]
+        }
+      },
+      "response": [
+        {
+          "name": "Success",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/health",
+              "host": ["{{BASE_URL}}"],
+              "path": ["health"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"status\": \"ok\",\n  \"service\": \"langapp-backend\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Request Match",
+      "request": {
+        "method": "POST",
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          }
+        ],
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"user_id\": \"{{USER_ID_A}}\",\n  \"native_languages\": [\"english\", \"spanish\"],\n  \"practice_language\": \"french\"\n}"
+        },
+        "url": {
+          "raw": "{{BASE_URL}}/api/v1/match/request",
+          "host": ["{{BASE_URL}}"],
+          "path": ["api", "v1", "match", "request"]
+        }
+      },
+      "response": [
+        {
+          "name": "Success",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{USER_ID_A}}\",\n  \"native_languages\": [\"english\", \"spanish\"],\n  \"practice_language\": \"french\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/match/request",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "match", "request"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"request_id\": \"123e4567-e89b-12d3-a456-426614174000\",\n  \"status\": \"pending\",\n  \"expires_at\": \"2025-07-13T15:35:00Z\",\n  \"message\": \"Added to matchmaking queue. You will be notified when a match is found.\"\n}"
+        },
+        {
+          "name": "Bad Request",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"invalid-uuid\",\n  \"native_languages\": [\"english\"],\n  \"practice_language\": \"spanish\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/match/request",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "match", "request"]
+            }
+          },
+          "status": "Bad Request",
+          "code": 400,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"error\": \"validation_error\",\n  \"message\": \"Invalid user ID format\"\n}"
+        },
+        {
+          "name": "Already in Queue",
+          "originalRequest": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{USER_ID_A}}\",\n  \"native_languages\": [\"english\"],\n  \"practice_language\": \"spanish\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/match/request",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "match", "request"]
+            }
+          },
+          "status": "Conflict",
+          "code": 409,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"error\": \"already_in_queue\",\n  \"message\": \"User already has an active match request for this language\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Cancel Match",
+      "request": {
+        "method": "DELETE",
+        "header": [],
+        "url": {
+          "raw": "{{BASE_URL}}/api/v1/match/cancel/{{USER_ID_A}}?practice_language=french",
+          "host": ["{{BASE_URL}}"],
+          "path": ["api", "v1", "match", "cancel", "{{USER_ID_A}}"],
+          "query": [
+            {
+              "key": "practice_language",
+              "value": "french"
+            }
+          ]
+        }
+      },
+      "response": [
+        {
+          "name": "Success",
+          "originalRequest": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/match/cancel/{{USER_ID_A}}?practice_language=french",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "match", "cancel", "{{USER_ID_A}}"],
+              "query": [
+                {
+                  "key": "practice_language",
+                  "value": "french"
+                }
+              ]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"status\": \"cancelled\",\n  \"message\": \"Match request cancelled successfully\"\n}"
+        },
+        {
+          "name": "Not Found",
+          "originalRequest": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/match/cancel/{{USER_ID_A}}?practice_language=french",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "match", "cancel", "{{USER_ID_A}}"],
+              "query": [
+                {
+                  "key": "practice_language",
+                  "value": "french"
+                }
+              ]
+            }
+          },
+          "status": "Not Found",
+          "code": 404,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"error\": \"request_not_found\",\n  \"message\": \"No active match request found for this user and language\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Queue Status",
+      "request": {
+        "method": "GET",
+        "header": [],
+        "url": {
+          "raw": "{{BASE_URL}}/api/v1/queue/status/{{USER_ID_A}}",
+          "host": ["{{BASE_URL}}"],
+          "path": ["api", "v1", "queue", "status", "{{USER_ID_A}}"]
+        }
+      },
+      "response": [
+        {
+          "name": "Success",
+          "originalRequest": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/queue/status/{{USER_ID_A}}",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "queue", "status", "{{USER_ID_A}}"]
+            }
+          },
+          "status": "OK",
+          "code": 200,
+          "header": [
+            {
+              "key": "Content-Type",
+              "value": "application/json"
+            }
+          ],
+          "body": "{\n  \"queue_status\": {\n    \"english\": 5,\n    \"spanish\": 3,\n    \"french\": 8,\n    \"german\": 2,\n    \"japanese\": 12\n  },\n  \"timestamp\": \"2025-07-13T15:30:00Z\"\n}"
+        }
+      ]
+    },
+    {
+      "name": "Test Scenarios",
+      "item": [
+        {
+          "name": "User A Request Match (English -> Spanish)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{USER_ID_A}}\",\n  \"native_languages\": [\"english\"],\n  \"practice_language\": \"spanish\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/match/request",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "match", "request"]
+            }
+          }
+        },
+        {
+          "name": "User B Request Match (Spanish -> English)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{USER_ID_B}}\",\n  \"native_languages\": [\"spanish\"],\n  \"practice_language\": \"english\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/match/request",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "match", "request"]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Error Tests",
+      "item": [
+        {
+          "name": "Invalid UUID Format",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"invalid-uuid\",\n  \"native_languages\": [\"english\"],\n  \"practice_language\": \"spanish\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/match/request",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "match", "request"]
+            }
+          }
+        },
+        {
+          "name": "Missing Required Fields",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{USER_ID_A}}\"\n}"
+            },
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/match/request",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "match", "request"]
+            }
+          }
+        },
+        {
+          "name": "Cancel Non-existent Request",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "url": {
+              "raw": "{{BASE_URL}}/api/v1/match/cancel/550e8400-e29b-41d4-a716-446655440999?practice_language=french",
+              "host": ["{{BASE_URL}}"],
+              "path": ["api", "v1", "match", "cancel", "550e8400-e29b-41d4-a716-446655440999"],
+              "query": [
+                {
+                  "key": "practice_language",
+                  "value": "french"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    }
+  ]
+}
