@@ -1,17 +1,43 @@
 package api
 
 import (
+	"langapp-backend/languages"
+	"langapp-backend/matchmaking"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
-func NewRouter() *chi.Mux {
+type MatchmakingService interface {
+	AddToQueue(entry matchmaking.QueueEntry) error
+}
+
+type LanguagesService interface {
+	GetSupportedLanguages() []languages.Language
+	IsValidLanguage(language string) bool
+}
+
+type APIService struct {
+	matchmakingService MatchmakingService
+	languagesService   LanguagesService
+}
+
+func NewAPIService(matchmakingService MatchmakingService, languagesService LanguagesService) *APIService {
+	return &APIService{
+		matchmakingService: matchmakingService,
+		languagesService:   languagesService,
+	}
+}
+
+func NewRouter(apiService *APIService) *chi.Mux {
 	r := chi.NewRouter()
 
 	r.Use(middleware.Logger)
 	r.Use(middleware.Recoverer)
 
-	r.Post("/queue", JoinQueueHandler)
+	r.Get("/languages", apiService.GetLanguagesHandler)
+	r.Post("/queue", apiService.StartMatchmaking)
+	r.Delete("/queue", apiService.CancelMatchmaking)
 
 	return r
 }

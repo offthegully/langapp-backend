@@ -17,6 +17,7 @@ This platform connects language learners for practice sessions through audio cal
 ## Prerequisites
 
 - Go 1.19 or later installed on your system
+- Docker and Docker Compose for Redis
 
 ## Installation
 
@@ -27,29 +28,45 @@ This platform connects language learners for practice sessions through audio cal
 go mod tidy
 ```
 
+3. Start Redis using Docker Compose:
+
+```bash
+docker-compose up -d redis
+```
+
 ## Running the Application
 
-To start the API server:
+1. Ensure Redis is running:
+
+```bash
+docker-compose up -d redis
+```
+
+2. Start the API server:
 
 ```bash
 go run main.go
 ```
 
-The server will start on port 8080.
+The server will start on port 8080 and connect to Redis on localhost:6379.
 
 ## API Endpoints
 
-- `GET /helloworld` - Returns a JSON hello world message
+- `POST /queue` - Join the matchmaking queue
+- `DELETE /queue` - Cancel queue participation
 
-### Example
+### Examples
 
+**Join Queue:**
 ```bash
-curl http://localhost:8080/helloworld
+curl -X POST http://localhost:8080/queue \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "user123", "native_language": "English", "practice_language": "Spanish"}'
 ```
 
-Response:
-```json
-{
-  "message": "Hello, World!"
-}
+**Cancel Queue:**
+```bash
+curl -X DELETE http://localhost:8080/queue \
+  -H "Content-Type: application/json" \
+  -d '{"user_id": "user123"}'
 ```
