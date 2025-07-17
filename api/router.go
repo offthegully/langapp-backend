@@ -1,15 +1,17 @@
 package api
 
 import (
+	"context"
 	"langapp-backend/languages"
 	"langapp-backend/matchmaking"
+	"langapp-backend/websocket"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 )
 
 type MatchmakingService interface {
-	AddToQueue(entry matchmaking.QueueEntry) error
+	AddToQueue(ctx context.Context, entry matchmaking.QueueEntry) error
 }
 
 type LanguagesService interface {
@@ -20,12 +22,14 @@ type LanguagesService interface {
 type APIService struct {
 	matchmakingService MatchmakingService
 	languagesService   LanguagesService
+	wsManager          *websocket.Manager
 }
 
-func NewAPIService(matchmakingService MatchmakingService, languagesService LanguagesService) *APIService {
+func NewAPIService(matchmakingService MatchmakingService, languagesService LanguagesService, wsManager *websocket.Manager) *APIService {
 	return &APIService{
 		matchmakingService: matchmakingService,
 		languagesService:   languagesService,
+		wsManager:          wsManager,
 	}
 }
 
@@ -38,6 +42,7 @@ func NewRouter(apiService *APIService) *chi.Mux {
 	r.Get("/languages", apiService.GetLanguagesHandler)
 	r.Post("/queue", apiService.StartMatchmaking)
 	r.Delete("/queue", apiService.CancelMatchmaking)
+	r.HandleFunc("/ws", apiService.wsManager.HandleWebSocket)
 
 	return r
 }

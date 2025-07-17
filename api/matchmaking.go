@@ -48,7 +48,7 @@ func (api *APIService) StartMatchmaking(w http.ResponseWriter, r *http.Request) 
 		Timestamp:        time.Now(),
 	}
 
-	err := api.matchmakingService.AddToQueue(queueEntry)
+	err := api.matchmakingService.AddToQueue(r.Context(), queueEntry)
 	if err != nil {
 		http.Error(w, "Failed to join queue", http.StatusInternalServerError)
 		return

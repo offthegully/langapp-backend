@@ -1,0 +1,241 @@
+openapi: 3.0.3
+info:
+  title: Language Exchange App API
+  description: API for a language exchange platform that connects users for language practice through audio calls
+  version: 1.0.0
+  contact:
+    name: Language Exchange App
+servers:
+  - url: http://localhost:8080
+    description: Local development server
+
+paths:
+  /languages:
+    get:
+      summary: Get supported languages
+      description: Returns a list of all supported languages for the platform
+      operationId: getSupportedLanguages
+      responses:
+        '200':
+          description: List of supported languages
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LanguagesResponse'
+
+  /ws:
+    get:
+      summary: WebSocket connection for match notifications
+      description: Establish a WebSocket connection to receive real-time match notifications
+      operationId: connectWebSocket
+      parameters:
+        - name: user_id
+          in: query
+          required: true
+          schema:
+            type: string
+          description: User ID for the WebSocket connection
+          example: "user123"
+      responses:
+        '101':
+          description: WebSocket connection established
+        '400':
+          description: Missing user_id parameter
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Missing user_id parameter"
+
+  /queue:
+    post:
+      summary: Join matchmaking queue
+      description: Join the matchmaking queue to find a language exchange partner
+      operationId: startMatchmaking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/StartMatchmakingRequest'
+      responses:
+        '201':
+          description: Successfully joined matchmaking queue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/StartMatchmakingResponse'
+        '400':
+          description: Invalid request body or validation error
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Missing required fields: user_id, native_language, practice_language"
+        '500':
+          description: Internal server error
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Failed to join queue"
+    
+    delete:
+      summary: Cancel matchmaking
+      description: Remove user from the matchmaking queue
+      operationId: cancelMatchmaking
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CancelMatchmakingRequest'
+      responses:
+        '200':
+          description: Successfully removed from matchmaking queue
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CancelMatchmakingResponse'
+        '400':
+          description: Invalid request body
+          content:
+            text/plain:
+              schema:
+                type: string
+                example: "Missing required field: user_id"
+
+components:
+  schemas:
+    Language:
+      type: object
+      properties:
+        name:
+          type: string
+          description: Full name of the language
+          example: "English"
+        short_name:
+          type: string
+          description: Short code for the language
+          example: "EN"
+      required:
+        - name
+        - short_name
+
+    LanguagesResponse:
+      type: object
+      properties:
+        languages:
+          type: array
+          items:
+            $ref: '#/components/schemas/Language'
+          description: List of supported languages
+      required:
+        - languages
+
+    StartMatchmakingRequest:
+      type: object
+      properties:
+        user_id:
+          type: string
+          description: Unique identifier for the user
+          example: "user123"
+        native_language:
+          type: string
+          description: User's native language (what they can teach)
+          example: "English"
+        practice_language:
+          type: string
+          description: Language the user wants to practice (what they want to learn)
+          example: "Spanish"
+      required:
+        - user_id
+        - native_language
+        - practice_language
+
+    StartMatchmakingResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Success message
+          example: "Successfully joined matchmaking queue"
+        queued_at:
+          type: string
+          format: date-time
+          description: Timestamp when user was added to queue
+          example: "2023-07-16T21:30:00Z"
+      required:
+        - message
+        - queued_at
+
+    CancelMatchmakingRequest:
+      type: object
+      properties:
+        user_id:
+          type: string
+          description: Unique identifier for the user
+          example: "user123"
+      required:
+        - user_id
+
+    CancelMatchmakingResponse:
+      type: object
+      properties:
+        message:
+          type: string
+          description: Success message
+          example: "Successfully removed from matchmaking queue"
+      required:
+        - message
+
+    WebSocketMessage:
+      type: object
+      properties:
+        type:
+          type: string
+          description: Type of WebSocket message
+          example: "match_found"
+        data:
+          $ref: '#/components/schemas/MatchNotification'
+      required:
+        - type
+        - data
+
+    MatchNotification:
+      type: object
+      properties:
+        match_id:
+          type: string
+          description: Unique identifier for the match
+          example: "match_1642345678"
+        partner_id:
+          type: string
+          description: ID of the matched partner
+          example: "user456"
+        language1:
+          type: string
+          description: First language in the exchange
+          example: "English"
+        language2:
+          type: string
+          description: Second language in the exchange
+          example: "Spanish"
+        message:
+          type: string
+          description: Human-readable match notification
+          example: "Match found! You'll practice Spanish with user456"
+      required:
+        - match_id
+        - partner_id
+        - language1
+        - language2
+        - message
+
+tags:
+  - name: Languages
+    description: Operations related to supported languages
+  - name: Matchmaking
+    description: Operations related to matchmaking queue
+  - name: WebSocket
+    description: Real-time WebSocket connections for match notifications

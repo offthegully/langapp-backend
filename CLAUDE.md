@@ -25,11 +25,15 @@ Once matched, users engage in audio calls to practice their target languages wit
   - `languages.go` - Languages API handler (GetLanguagesHandler)
 - `matchmaking/` - Core matchmaking business logic
   - `queue.go` - MatchmakingService and QueueEntry structs with Redis interface
+  - `matching.go` - MatchingService for real-time match discovery and WebSocket notifications
 - `storage/` - Data layer
   - `redis.go` - Redis client configuration and factory
 - `languages/` - Language validation and constants
   - `languages.go` - Supported languages list and validation functions
+- `websocket/` - WebSocket connection management
+  - `manager.go` - WebSocket client management and real-time messaging
 - `docker-compose.yml` - Redis container for local development
+- `openapi.yaml` - OpenAPI 3.0 specification for all endpoints
 
 ## Development Commands
 - Start Redis: `docker-compose up -d redis`
@@ -37,27 +41,51 @@ Once matched, users engage in audio calls to practice their target languages wit
 - Install dependencies: `go mod tidy`
 - Format code: `go fmt ./...`
 - Build: `go build`
+- Run tests: `go test ./...` (no tests currently exist)
+- Test specific package: `go test ./matchmaking`
 - Stop services: `docker-compose down`
 
+## Dependencies
+- Go version: 1.23.2
+- Key packages: Chi router (v5.2.2), Redis client (v9.11.0)
+
 ## Architecture Patterns
-- Dependency injection pattern: main.go creates RedisClient and MatchmakingService
-- Interface segregation: RedisClient interface in matchmaking package only exposes needed Redis methods
-- Separation of concerns: API handlers in api/, business logic in matchmaking/, data access in storage/
-- Chi middleware for logging and panic recovery
-- JSON request/response validation with struct tags
-- Language validation using predefined constants
+- **Clean dependency injection**: main.go creates and wires all dependencies with proper initialization
+- **Interface segregation**: RedisClient interface in matchmaking package only exposes needed Redis methods
+- **Defensive initialization**: Each component ensures its dependencies are properly initialized (robust pattern)
+- **Separation of concerns**: API handlers in api/, business logic in matchmaking/, data access in storage/
+- **Chi middleware**: Logging and panic recovery at HTTP layer
+- **JSON validation**: Request/response validation with struct tags
+- **Language validation**: Using predefined constants and validation functions
+
+**Code Quality Note**: The current dependency injection setup and clean architecture patterns should be maintained. Strive to keep code organized with clear interfaces, proper initialization, and separation of concerns.
 
 ## API Endpoints
 - `GET /languages` - Returns list of supported languages
 - `POST /queue` - Join matchmaking queue (requires user_id, native_language, practice_language)
 - `DELETE /queue` - Cancel queue participation (requires user_id)
+- `GET /ws?user_id={id}` - WebSocket connection for real-time match notifications
 
 ## Key Types
 - `matchmaking.QueueEntry` - User queue data with languages and timestamp
 - `matchmaking.MatchmakingService` - Service with Redis dependency for queue operations
+- `matchmaking.MatchingService` - Service for real-time match discovery and notifications
 - `languages.Language` - Language struct with Name and ShortName fields
+- `websocket.Manager` - WebSocket connection manager for real-time messaging
 
 ## Service Integration
 - API handlers call MatchmakingService methods (note: method calls should be on service instance, not package functions)
 - Language validation happens in API layer using languages.IsValidLanguage()
 - Redis operations abstracted through MatchmakingService interface
+
+## Current Implementation Status
+- ✅ Complete API structure with validation
+- ✅ Redis client setup and configuration
+- ✅ Language validation with 20 supported languages
+- ✅ Redis pub/sub system with language-specific channels
+- ✅ AddToQueue implemented with Redis storage and pub/sub publishing
+- ✅ Real-time matching service with complementary algorithm
+- ✅ WebSocket support for instant match notifications
+- ✅ OpenAPI specification documentation
+- ❌ CancelMatchmaking doesn't remove from Redis queue yet
+- ❌ No test coverage exists
