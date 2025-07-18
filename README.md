@@ -70,3 +70,54 @@ curl -X DELETE http://localhost:8080/queue \
   -H "Content-Type: application/json" \
   -d '{"user_id": "user123"}'
 ```
+
+## Testing
+
+### Local Development Testing Scripts
+
+**⚠️ Note: These scripts are for local development testing only and should not be used in production.**
+
+The `test/scripts/` directory contains shell scripts to test the matchmaking functionality locally:
+
+#### Prerequisites
+- Server running locally (`go run main.go`)
+- Redis running (`docker-compose up -d redis`)
+- Optional: `websocat` for WebSocket testing (`brew install websocat`)
+
+#### Available Test Scripts
+
+**Individual User Scripts:**
+- `./test/scripts/user1_english_practice.sh` - Simulates Spanish native speaker wanting to practice English
+- `./test/scripts/user2_spanish_practice.sh` - Simulates English native speaker wanting to practice Spanish
+
+**WebSocket Connection Scripts:**
+- `./test/scripts/websocket_user1.sh` - Opens WebSocket connection for User 1
+- `./test/scripts/websocket_user2.sh` - Opens WebSocket connection for User 2
+
+**Complete Test:**
+- `./test/scripts/test_match.sh` - Runs full matching test with both users
+
+#### How to Test Matchmaking
+
+1. **Basic API Test:**
+   ```bash
+   ./test/scripts/test_match.sh
+   ```
+
+2. **Real-time WebSocket Test:**
+   ```bash
+   # Terminal 1: Connect User 1's WebSocket
+   ./test/scripts/websocket_user1.sh
+   
+   # Terminal 2: Connect User 2's WebSocket  
+   ./test/scripts/websocket_user2.sh
+   
+   # Terminal 3: Run the matchmaking test
+   ./test/scripts/test_match.sh
+   ```
+
+The scripts simulate two complementary users who should match with each other:
+- User 1: Native Spanish speaker practicing English
+- User 2: Native English speaker practicing Spanish
+
+When both users join the queue, they should be automatically matched and receive WebSocket notifications.

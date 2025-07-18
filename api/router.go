@@ -12,6 +12,7 @@ import (
 
 type MatchmakingService interface {
 	AddToQueue(ctx context.Context, entry matchmaking.QueueEntry) error
+	RemoveFromQueue(ctx context.Context, userID string, practiceLanguage string) error
 }
 
 type LanguagesService interface {

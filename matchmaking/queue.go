@@ -52,12 +52,51 @@ func (ms *MatchmakingService) AddToQueue(ctx context.Context, entry QueueEntry) 
 		return err
 	}
 
+	// Store user in Redis queue for their practice language (what they want to learn)
+	// This allows others looking for their native language to find them
 	queueKey := "queue:" + entry.PracticeLanguage
 	if err := ms.redisClient.RPush(ctx, queueKey, entryJSON).Err(); err != nil {
 		return err
 	}
 
-	return ms.pubSubManager.PublishToLanguageChannel(ctx, entry.PracticeLanguage, entryJSON)
+	// Publish to native language channel so others practicing that language can see them
+	err = ms.pubSubManager.PublishToLanguageChannel(ctx, entry.NativeLanguage, entryJSON)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func (ms *MatchmakingService) RemoveFromQueue(ctx context.Context, userID string, practiceLanguage string) error {
+	queueKey := "queue:" + practiceLanguage
+	
+	// Get all entries in the queue to find the user
+	queueLength, err := ms.redisClient.LLen(ctx, queueKey).Result()
+	if err != nil {
+		return err
+	}
+	
+	// Search through the queue to find the user
+	for i := int64(0); i < queueLength; i++ {
+		entryJSON, err := ms.redisClient.LIndex(ctx, queueKey, i).Result()
+		if err != nil {
+			continue
+		}
+		
+		var entry QueueEntry
+		if err := json.Unmarshal([]byte(entryJSON), &entry); err != nil {
+			continue
+		}
+		
+		// If we found the user, remove them from the queue
+		if entry.UserID == userID {
+			return ms.redisClient.LRem(ctx, queueKey, 1, entryJSON).Err()
+		}
+	}
+	
+	// User not found in queue - this is not an error
+	return nil
 }
 
 func (ms *MatchmakingService) InitializeLanguageChannels(ctx context.Context, languages []string) error {

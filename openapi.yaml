@@ -176,8 +176,13 @@ components:
           type: string
           description: Unique identifier for the user
           example: "user123"
+        practice_language:
+          type: string
+          description: The language the user was practicing (to identify which queue to remove from)
+          example: "Spanish"
       required:
         - user_id
+        - practice_language
 
     CancelMatchmakingResponse:
       type: object
