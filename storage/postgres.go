@@ -1,0 +1,129 @@
+package storage
+
+import (
+	"context"
+	"database/sql"
+	"fmt"
+	"log"
+	"os"
+
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/pressly/goose/v3"
+	_ "github.com/jackc/pgx/v5/stdlib"
+)
+
+type PostgresClient struct {
+	pool *pgxpool.Pool
+}
+
+func NewPostgresClient() *PostgresClient {
+	// Default connection parameters for local development
+	host := getEnv("POSTGRES_HOST", "localhost")
+	port := getEnv("POSTGRES_PORT", "5432")
+	user := getEnv("POSTGRES_USER", "langapp")
+	password := getEnv("POSTGRES_PASSWORD", "langapp_dev")
+	dbname := getEnv("POSTGRES_DB", "langapp")
+
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+
+	config, err := pgxpool.ParseConfig(dsn)
+	if err != nil {
+		log.Fatalf("Unable to parse postgres config: %v", err)
+	}
+
+	// Configure connection pool
+	config.MaxConns = 25
+	config.MinConns = 5
+
+	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	if err != nil {
+		log.Fatalf("Unable to create postgres connection pool: %v", err)
+	}
+
+	// Test the connection
+	ctx := context.Background()
+	if err := pool.Ping(ctx); err != nil {
+		log.Fatalf("Unable to connect to postgres: %v", err)
+	}
+
+	log.Printf("Connected to PostgreSQL database: %s", dbname)
+
+	return &PostgresClient{
+		pool: pool,
+	}
+}
+
+func (pc *PostgresClient) Close() {
+	pc.pool.Close()
+}
+
+func (pc *PostgresClient) GetPool() *pgxpool.Pool {
+	return pc.pool
+}
+
+func (pc *PostgresClient) Ping(ctx context.Context) error {
+	return pc.pool.Ping(ctx)
+}
+
+func (pc *PostgresClient) Query(ctx context.Context, sql string, args ...interface{}) (pgx.Rows, error) {
+	return pc.pool.Query(ctx, sql, args...)
+}
+
+func (pc *PostgresClient) QueryRow(ctx context.Context, sql string, args ...interface{}) pgx.Row {
+	return pc.pool.QueryRow(ctx, sql, args...)
+}
+
+func (pc *PostgresClient) Exec(ctx context.Context, sql string, args ...interface{}) (pgconn.CommandTag, error) {
+	return pc.pool.Exec(ctx, sql, args...)
+}
+
+func (pc *PostgresClient) Begin(ctx context.Context) (pgx.Tx, error) {
+	return pc.pool.Begin(ctx)
+}
+
+func RunMigrations() error {
+	// Get database connection parameters
+	host := getEnv("POSTGRES_HOST", "localhost")
+	port := getEnv("POSTGRES_PORT", "5432")
+	user := getEnv("POSTGRES_USER", "langapp")
+	password := getEnv("POSTGRES_PASSWORD", "langapp_dev")
+	dbname := getEnv("POSTGRES_DB", "langapp")
+
+	// Create a standard sql.DB connection for Goose
+	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
+		host, port, user, password, dbname)
+	
+	db, err := sql.Open("pgx", dsn)
+	if err != nil {
+		return fmt.Errorf("failed to open database connection: %w", err)
+	}
+	defer db.Close()
+
+	// Test the connection
+	if err := db.Ping(); err != nil {
+		return fmt.Errorf("failed to ping database: %w", err)
+	}
+
+	// Set the dialect for Goose
+	if err := goose.SetDialect("postgres"); err != nil {
+		return fmt.Errorf("failed to set goose dialect: %w", err)
+	}
+
+	// Run migrations
+	if err := goose.Up(db, "storage/migrations"); err != nil {
+		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	log.Println("Database migrations completed successfully")
+	return nil
+}
+
+func getEnv(key, defaultValue string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return defaultValue
+}

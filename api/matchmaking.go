@@ -100,7 +100,11 @@ func (api *APIService) validateCancelMatchmakingRequest(req CancelMatchmakingReq
 		return false, "Missing required fields: user_id, practice_language"
 	}
 
-	if !api.languagesService.IsValidLanguage(req.PracticeLanguage) {
+	valid, err := api.languagesService.IsValidLanguage(req.PracticeLanguage)
+	if err != nil {
+		return false, "Error validating practice language"
+	}
+	if !valid {
 		return false, "Invalid practice language"
 	}
 
@@ -116,11 +120,19 @@ func (api *APIService) validateStartMatchmakingRequest(req StartMatchmakingReque
 		return false, "Native language and practice language cannot be the same"
 	}
 
-	if !api.languagesService.IsValidLanguage(req.NativeLanguage) {
+	valid, err := api.languagesService.IsValidLanguage(req.NativeLanguage)
+	if err != nil {
+		return false, "Error validating native language"
+	}
+	if !valid {
 		return false, "Invalid native language"
 	}
 
-	if !api.languagesService.IsValidLanguage(req.PracticeLanguage) {
+	valid, err = api.languagesService.IsValidLanguage(req.PracticeLanguage)
+	if err != nil {
+		return false, "Error validating practice language"
+	}
+	if !valid {
 		return false, "Invalid practice language"
 	}
 

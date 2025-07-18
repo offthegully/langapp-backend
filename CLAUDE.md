@@ -45,9 +45,20 @@ Once matched, users engage in audio calls to practice their target languages wit
 - Test specific package: `go test ./matchmaking`
 - Stop services: `docker-compose down`
 
+## Test Scripts
+Located in `test/scripts/` directory for local development testing:
+- `./test/scripts/test_match.sh` - Complete matchmaking test with complementary users
+- `./test/scripts/user1_english_practice.sh` - Spanish native speaker practicing English
+- `./test/scripts/user2_spanish_practice.sh` - English native speaker practicing Spanish
+- `./test/scripts/websocket_user1.sh` - WebSocket connection for User 1
+- `./test/scripts/websocket_user2.sh` - WebSocket connection for User 2
+
+**Prerequisites for WebSocket tests**: Install `websocat` with `brew install websocat`
+
 ## Dependencies
 - Go version: 1.23.2
-- Key packages: Chi router (v5.2.2), Redis client (v9.11.0)
+- Key packages: Chi router (v5.2.2), Redis client (v9.11.0), Gorilla WebSocket (v1.5.3)
+- External services: Redis 7 (containerized via Docker)
 
 ## Architecture Patterns
 - **Clean dependency injection**: main.go creates and wires all dependencies with proper initialization
@@ -87,5 +98,6 @@ Once matched, users engage in audio calls to practice their target languages wit
 - ✅ Real-time matching service with complementary algorithm
 - ✅ WebSocket support for instant match notifications
 - ✅ OpenAPI specification documentation
-- ❌ CancelMatchmaking doesn't remove from Redis queue yet
-- ❌ No test coverage exists
+- ✅ RemoveFromQueue implemented with Redis queue search and removal
+- ✅ Test scripts for local development and WebSocket testing
+- ❌ No formal test coverage exists (only manual test scripts)

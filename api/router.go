@@ -16,8 +16,8 @@ type MatchmakingService interface {
 }
 
 type LanguagesService interface {
-	GetSupportedLanguages() []languages.Language
-	IsValidLanguage(language string) bool
+	GetSupportedLanguages() ([]languages.Language, error)
+	IsValidLanguage(language string) (bool, error)
 }
 
 type APIService struct {

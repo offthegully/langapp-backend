@@ -12,8 +12,14 @@ type LanguagesResponse struct {
 }
 
 func (api *APIService) GetLanguagesHandler(w http.ResponseWriter, r *http.Request) {
+	languages, err := api.languagesService.GetSupportedLanguages()
+	if err != nil {
+		http.Error(w, "Failed to get supported languages", http.StatusInternalServerError)
+		return
+	}
+
 	response := LanguagesResponse{
-		Languages: api.languagesService.GetSupportedLanguages(),
+		Languages: languages,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
