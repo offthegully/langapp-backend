@@ -23,7 +23,7 @@ func main() {
 	defer postgresClient.Close()
 
 	// Run database migrations
-	if err := storage.RunMigrations(); err != nil {
+	if err := postgresClient.RunMigrations(); err != nil {
 		log.Fatalf("Failed to run migrations: %v", err)
 	}
 

@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 # Language Exchange App Backend
 
-A monolith Go backend API for a language exchange application using Chi framework.
+A monolith Go backend API for a language exchange application using Chi framework with PostgreSQL and Redis.
 
 ## Application Concept
 This is a language exchange platform that connects users for language practice through audio calls. Users specify:
@@ -15,10 +15,15 @@ The matching algorithm pairs users where:
 - User A's practice language = User B's native language, AND
 - User A's native language = User B's practice language
 
-Once matched, users engage in audio calls to practice their target languages with native speakers.
+**Single Language Sessions**: Each match results in a session focused on practicing ONE language only. When two users with reciprocal language needs are matched, the system selects the practice language of the user who has been waiting in the queue longer. This ensures:
+- One user practices their target language
+- The other user helps as a native speaker
+- Clear focus on a single language per session
+
+**Example**: If User 1 (Spanish native, practicing English) has been queued for 2 minutes and User 2 (English native, practicing Spanish) joins the queue, the session language will be English (User 1's practice language). User 1 will practice English while User 2 helps as a native English speaker.
 
 ## Project Structure
-- `main.go` - Entry point, starts HTTP server and initializes services
+- `main.go` - Entry point, starts HTTP server and initializes services with database migrations
 - `api/` - API layer containing routing and handlers
   - `router.go` - Chi router setup with middleware and route definitions
   - `matchmaking.go` - Matchmaking API handlers (StartMatchmaking, CancelMatchmaking)
@@ -27,7 +32,11 @@ Once matched, users engage in audio calls to practice their target languages wit
   - `queue.go` - MatchmakingService and QueueEntry structs with Redis interface
   - `matching.go` - MatchingService for real-time match discovery and WebSocket notifications
 - `storage/` - Data layer
+  - `postgres.go` - PostgreSQL client with connection pooling and migrations
   - `redis.go` - Redis client configuration and factory
+  - `migrations/` - Database migration files (embedded)
+- `session/` - Session management
+  - `session.go` - Session repository with CRUD operations and status tracking
 - `languages/` - Language validation and constants
   - `languages.go` - Supported languages list and validation functions
 - `websocket/` - WebSocket connection management
@@ -36,7 +45,7 @@ Once matched, users engage in audio calls to practice their target languages wit
 - `openapi.yaml` - OpenAPI 3.0 specification for all endpoints
 
 ## Development Commands
-- Start Redis: `docker-compose up -d redis`
+- Start services: `docker-compose up -d`
 - Start server: `go run main.go`
 - Install dependencies: `go mod tidy`
 - Format code: `go fmt ./...`
@@ -44,6 +53,11 @@ Once matched, users engage in audio calls to practice their target languages wit
 - Run tests: `go test ./...` (no tests currently exist)
 - Test specific package: `go test ./matchmaking`
 - Stop services: `docker-compose down`
+
+## Testing Guidelines
+- **Manual Testing**: Do NOT run manual tests using the test scripts when making code changes. Only run unit tests with `go test ./...`
+- **Test Scripts**: The scripts in `test/scripts/` are for user verification only, not for automated testing during development
+- **Future Testing**: Once unit tests are implemented, use `go test ./...` to verify changes instead of manual testing
 
 ## Test Scripts
 Located in `test/scripts/` directory for local development testing:
@@ -57,22 +71,34 @@ Located in `test/scripts/` directory for local development testing:
 
 ## Dependencies
 - Go version: 1.23.2
-- Key packages: Chi router (v5.2.2), Redis client (v9.11.0), Gorilla WebSocket (v1.5.3)
-- External services: Redis 7 (containerized via Docker)
+- Key packages: Chi router (v5.2.2), PostgreSQL driver (pgx/v5), Redis client (v9.11.0), Gorilla WebSocket (v1.5.3), Goose migrations (v3.24.3)
+- External services: PostgreSQL (local development), Redis 7 (containerized via Docker)
+
+## Database Configuration
+**PostgreSQL Environment Variables** (defaults for local development):
+- `POSTGRES_HOST=localhost`
+- `POSTGRES_PORT=5432`
+- `POSTGRES_USER=langapp`
+- `POSTGRES_PASSWORD=langapp_dev`
+- `POSTGRES_DB=langapp`
+
+**Connection Pool**: 25 max connections, 5 min connections
 
 ## Architecture Patterns
 - **Clean dependency injection**: main.go creates and wires all dependencies with proper initialization
-- **Interface segregation**: RedisClient interface in matchmaking package only exposes needed Redis methods
-- **Defensive initialization**: Each component ensures its dependencies are properly initialized (robust pattern)
+- **Database migrations**: Embedded SQL migrations run automatically on startup using Goose
+- **Dual storage**: PostgreSQL for persistent data (sessions, languages), Redis for temporary matchmaking queue
+- **Interface segregation**: Clean interfaces for database operations
+- **Defensive initialization**: Each component ensures its dependencies are properly initialized
 - **Separation of concerns**: API handlers in api/, business logic in matchmaking/, data access in storage/
 - **Chi middleware**: Logging and panic recovery at HTTP layer
 - **JSON validation**: Request/response validation with struct tags
-- **Language validation**: Using predefined constants and validation functions
+- **Language validation**: Database-driven language validation with repository pattern
 
 **Code Quality Note**: The current dependency injection setup and clean architecture patterns should be maintained. Strive to keep code organized with clear interfaces, proper initialization, and separation of concerns.
 
 ## API Endpoints
-- `GET /languages` - Returns list of supported languages
+- `GET /languages` - Returns list of supported languages from database
 - `POST /queue` - Join matchmaking queue (requires user_id, native_language, practice_language)
 - `DELETE /queue` - Cancel queue participation (requires user_id)
 - `GET /ws?user_id={id}` - WebSocket connection for real-time match notifications
@@ -81,19 +107,25 @@ Located in `test/scripts/` directory for local development testing:
 - `matchmaking.QueueEntry` - User queue data with languages and timestamp
 - `matchmaking.MatchmakingService` - Service with Redis dependency for queue operations
 - `matchmaking.MatchingService` - Service for real-time match discovery and notifications
+- `session.Session` - Session entity with status tracking and duration calculation
+- `session.Repository` - Database repository for session CRUD operations
 - `languages.Language` - Language struct with Name and ShortName fields
 - `websocket.Manager` - WebSocket connection manager for real-time messaging
 
 ## Service Integration
-- API handlers call MatchmakingService methods (note: method calls should be on service instance, not package functions)
-- Language validation happens in API layer using languages.IsValidLanguage()
+- API handlers call service methods (note: method calls should be on service instance, not package functions)
+- Language validation happens via database repository using languages service
 - Redis operations abstracted through MatchmakingService interface
+- PostgreSQL operations abstracted through repository pattern
+- Session creation and tracking handled by session repository
 
 ## Current Implementation Status
 - ✅ Complete API structure with validation
+- ✅ PostgreSQL client with connection pooling and embedded migrations
 - ✅ Redis client setup and configuration
-- ✅ Language validation with 20 supported languages
+- ✅ Database-driven language validation and repository pattern
 - ✅ Redis pub/sub system with language-specific channels
+- ✅ Session management with status tracking and duration calculation
 - ✅ AddToQueue implemented with Redis storage and pub/sub publishing
 - ✅ Real-time matching service with complementary algorithm
 - ✅ WebSocket support for instant match notifications

@@ -2,7 +2,7 @@ package storage
 
 import (
 	"context"
-	"database/sql"
+	"embed"
 	"fmt"
 	"log"
 	"os"
@@ -10,8 +10,8 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/jackc/pgx/v5/stdlib"
 	"github.com/pressly/goose/v3"
-	_ "github.com/jackc/pgx/v5/stdlib"
 )
 
 type PostgresClient struct {
@@ -84,37 +84,26 @@ func (pc *PostgresClient) Begin(ctx context.Context) (pgx.Tx, error) {
 	return pc.pool.Begin(ctx)
 }
 
-func RunMigrations() error {
-	// Get database connection parameters
-	host := getEnv("POSTGRES_HOST", "localhost")
-	port := getEnv("POSTGRES_PORT", "5432")
-	user := getEnv("POSTGRES_USER", "langapp")
-	password := getEnv("POSTGRES_PASSWORD", "langapp_dev")
-	dbname := getEnv("POSTGRES_DB", "langapp")
+//go:embed migrations/*.sql
+var embedMigrations embed.FS
 
-	// Create a standard sql.DB connection for Goose
-	dsn := fmt.Sprintf("host=%s port=%s user=%s password=%s dbname=%s sslmode=disable",
-		host, port, user, password, dbname)
-	
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		return fmt.Errorf("failed to open database connection: %w", err)
-	}
-	defer db.Close()
-
-	// Test the connection
-	if err := db.Ping(); err != nil {
-		return fmt.Errorf("failed to ping database: %w", err)
-	}
+func (pc *PostgresClient) RunMigrations() error {
+	goose.SetBaseFS(embedMigrations)
 
 	// Set the dialect for Goose
 	if err := goose.SetDialect("postgres"); err != nil {
 		return fmt.Errorf("failed to set goose dialect: %w", err)
 	}
 
+	db := stdlib.OpenDBFromPool(pc.pool)
 	// Run migrations
-	if err := goose.Up(db, "storage/migrations"); err != nil {
+	if err := goose.Up(db, "migrations"); err != nil {
 		return fmt.Errorf("failed to run migrations: %w", err)
+	}
+
+	err := db.Close()
+	if err != nil {
+		return fmt.Errorf("failed to close temp db connection: %w", err)
 	}
 
 	log.Println("Database migrations completed successfully")

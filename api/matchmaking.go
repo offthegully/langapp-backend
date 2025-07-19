@@ -22,8 +22,8 @@ type CancelMatchmakingRequest struct {
 }
 
 type StartMatchmakingResponse struct {
-	Message     string    `json:"message"`
-	QueuedAt    time.Time `json:"queued_at"`
+	Message      string    `json:"message"`
+	QueuedAt     time.Time `json:"queued_at"`
 	WebSocketURL string    `json:"websocket_url"`
 }
 
@@ -48,7 +48,6 @@ func (api *APIService) StartMatchmaking(w http.ResponseWriter, r *http.Request) 
 		UserID:           req.UserID,
 		NativeLanguage:   req.NativeLanguage,
 		PracticeLanguage: req.PracticeLanguage,
-		Timestamp:        time.Now(),
 	}
 
 	err := api.matchmakingService.AddToQueue(r.Context(), queueEntry)
@@ -144,11 +143,11 @@ func (api *APIService) getWebSocketURL(userID string, r *http.Request) string {
 	if r.TLS != nil {
 		scheme = "wss"
 	}
-	
+
 	host := r.Host
 	if host == "" {
 		host = "localhost:8080"
 	}
-	
+
 	return fmt.Sprintf("%s://%s/ws?user_id=%s", scheme, host, userID)
 }

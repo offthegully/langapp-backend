@@ -15,13 +15,7 @@ CREATE INDEX IF NOT EXISTS idx_languages_short_name ON languages(short_name);
 CREATE INDEX IF NOT EXISTS idx_languages_is_active ON languages(is_active);
 
 -- Create updated_at trigger function
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-    NEW.updated_at = CURRENT_TIMESTAMP;
-    RETURN NEW;
-END;
-$$ language 'plpgsql';
+CREATE OR REPLACE FUNCTION update_updated_at_column() RETURNS TRIGGER AS 'BEGIN NEW.updated_at = CURRENT_TIMESTAMP; RETURN NEW; END;' LANGUAGE plpgsql;
 
 -- Create trigger to automatically update updated_at column for languages
 CREATE TRIGGER update_languages_updated_at
@@ -66,11 +60,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     ended_at TIMESTAMP WITH TIME ZONE,
-    duration_seconds INTEGER,
-    
-    -- Add unique constraints to prevent duplicate active sessions
-    CONSTRAINT unique_active_user1 UNIQUE (user1_id) DEFERRABLE INITIALLY DEFERRED,
-    CONSTRAINT unique_active_user2 UNIQUE (user2_id) DEFERRABLE INITIALLY DEFERRED
+    duration_seconds INTEGER
 );
 
 -- Create indexes for better performance on sessions table
