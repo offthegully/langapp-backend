@@ -12,6 +12,7 @@ import (
 type RedisClient interface {
 	Ping(ctx context.Context) *redis.StatusCmd
 	LPop(ctx context.Context, key string) *redis.StringCmd
+	LPush(ctx context.Context, key string, values ...interface{}) *redis.IntCmd
 	RPush(ctx context.Context, key string, values ...interface{}) *redis.IntCmd
 	LLen(ctx context.Context, key string) *redis.IntCmd
 	LIndex(ctx context.Context, key string, index int64) *redis.StringCmd
@@ -20,6 +21,7 @@ type RedisClient interface {
 	Subscribe(ctx context.Context, channels ...string) *redis.PubSub
 	Pipeline() redis.Pipeliner
 	HGet(ctx context.Context, key, field string) *redis.StringCmd
+	HSet(ctx context.Context, key string, values ...interface{}) *redis.IntCmd
 	HDel(ctx context.Context, key string, fields ...string) *redis.IntCmd
 }
 
