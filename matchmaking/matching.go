@@ -76,7 +76,7 @@ func (s *MatchingService) listenToLanguageChannel(ctx context.Context, language 
 		}
 
 		if match != nil {
-			// remove from something
+			s.Remove(ctx, language, match.NativeUser.UserID)
 
 			log.Printf("Match found! %s <-> %s", match.PracticeUser.UserID, match.NativeUser.UserID)
 			if err := s.notifyMatch(match); err != nil {
@@ -88,21 +88,35 @@ func (s *MatchingService) listenToLanguageChannel(ctx context.Context, language 
 
 func (s *MatchingService) findMatch(ctx context.Context, nativeEntry QueueEntry) (*Match, error) {
 	language := nativeEntry.NativeLanguage
-	key := fmt.Sprintf("queue:%s", language)
-	element, err := s.redisClient.LPop(ctx, key).Result()
+	queueKey := "queue:" + language
+
+	// 1. Pop the next user ID from the left of the list (FIFO).
+	userID, err := s.redisClient.LPop(ctx, queueKey).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			log.Printf("Queue '%s' is empty.", key)
+			// This is an expected error when the queue is empty.
+			return nil, err
 		}
-		return nil, err
+		return nil, fmt.Errorf("failed to pop from queue '%s': %w", queueKey, err)
 	}
 
-	var practiceEntry QueueEntry
-
-	err = json.Unmarshal([]byte(element), &practiceEntry)
+	// 2. Get the user's data from the hash.
+	entryJSON, err := s.redisClient.HGet(ctx, usersDataHashKey, userID).Result()
 	if err != nil {
-		fmt.Println("Error unmarshaling JSON:", err)
-		return nil, err
+		// If data is missing for some reason, return an error.
+		return nil, fmt.Errorf("could not find data for user '%s': %w", userID, err)
+	}
+
+	// 3. Clean up the user's data from the hash.
+	if err := s.redisClient.HDel(ctx, usersDataHashKey, userID).Err(); err != nil {
+		log.Printf("Warning: failed to clean up user data for '%s': %v", userID, err)
+		// Continue anyway since we have the data we need
+	}
+
+	// Unmarshal the data and return it.
+	var practiceEntry QueueEntry
+	if err := json.Unmarshal([]byte(entryJSON), &practiceEntry); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal data for user '%s': %w", userID, err)
 	}
 
 	matchID := fmt.Sprintf("match_%d", time.Now().Unix())
@@ -118,111 +132,28 @@ func (s *MatchingService) findMatch(ctx context.Context, nativeEntry QueueEntry)
 	return match, nil
 }
 
-func (s *MatchingService) findMatchInQueue(ctx context.Context, queueKey string, newUser QueueEntry) *QueueEntry {
-	queueLength, err := s.redisClient.LLen(ctx, queueKey).Result()
+func (s *MatchingService) Remove(ctx context.Context, language, userID string) error {
+	queueKey := "queue:" + language
+
+	// Use a pipeline for efficiency.
+	pipe := s.redisClient.Pipeline()
+	// Command to remove the user ID from the queue list.
+	lremResult := pipe.LRem(ctx, queueKey, 1, userID)
+	// Command to delete the user data from the hash.
+	pipe.HDel(ctx, usersDataHashKey, userID)
+	_, err := pipe.Exec(ctx)
+
 	if err != nil {
-		log.Printf("Error getting queue length for %s: %v", queueKey, err)
-		return nil
+		return fmt.Errorf("failed to execute removal for user '%s': %w", userID, err)
 	}
 
-	var oldestMatch *QueueEntry
-	for i := int64(0); i < queueLength; i++ {
-		entryJSON, err := s.redisClient.LIndex(ctx, queueKey, i).Result()
-		if err != nil {
-			continue
-		}
-
-		var candidateUser QueueEntry
-		if err := json.Unmarshal([]byte(entryJSON), &candidateUser); err != nil {
-			continue
-		}
-
-		// Skip if same user
-		if candidateUser.UserID == newUser.UserID {
-			continue
-		}
-
-		// Check if user already has active session
-		if hasActiveSession, err := s.userHasActiveSession(ctx, candidateUser.UserID); err != nil {
-			log.Printf("Error checking active session for user %s: %v", candidateUser.UserID, err)
-			continue
-		} else if hasActiveSession {
-			continue
-		}
-
-		// Check for reciprocal language compatibility
-		// For a perfect match:
-		// - candidateUser's native language should be newUser's practice language
-		// - candidateUser's practice language should be newUser's native language
-		isCompatible := candidateUser.NativeLanguage == newUser.PracticeLanguage &&
-			candidateUser.PracticeLanguage == newUser.NativeLanguage
-
-		if isCompatible {
-			// Keep the oldest (earliest timestamp) match
-			if oldestMatch == nil || candidateUser.Timestamp.Before(oldestMatch.Timestamp) {
-				oldestMatch = &candidateUser
-			}
-		}
+	// Check if the user was actually found and removed from the list.
+	if lremResult.Val() == 0 {
+		return fmt.Errorf("user '%s' not found in queue '%s'", userID, language)
 	}
 
-	return oldestMatch
-}
-
-func (s *MatchingService) userHasActiveSession(ctx context.Context, userID string) (bool, error) {
-	// Check if user has an active session in the database
-	session, err := s.sessionRepository.GetActiveSessionByUserID(ctx, userID)
-	if err != nil {
-		return false, err
-	}
-	return session != nil, nil
-}
-
-func (s *MatchingService) removeUserFromAllQueues(ctx context.Context, userID string) error {
-	// We need to remove the user from all possible queues
-	// Since we don't know which queue they're in, we'll try all language queues
-	for _, language := range s.languages {
-		queueKey := "queue:" + language
-
-		// Get all entries in this queue
-		queueLength, err := s.redisClient.LLen(ctx, queueKey).Result()
-		if err != nil {
-			continue
-		}
-
-		// Search for user in this queue
-		for i := int64(0); i < queueLength; i++ {
-			entryJSON, err := s.redisClient.LIndex(ctx, queueKey, i).Result()
-			if err != nil {
-				continue
-			}
-
-			var entry QueueEntry
-			if err := json.Unmarshal([]byte(entryJSON), &entry); err != nil {
-				continue
-			}
-
-			if entry.UserID == userID {
-				// Remove this entry
-				if err := s.redisClient.LRem(ctx, queueKey, 1, entryJSON).Err(); err != nil {
-					log.Printf("Error removing user %s from queue %s: %v", userID, queueKey, err)
-				} else {
-					log.Printf("Removed user %s from queue %s", userID, queueKey)
-				}
-				break // User should only be in one queue, but continue checking other queues for safety
-			}
-		}
-	}
+	log.Printf("Removed user '%s' from language '%s'", userID, language)
 	return nil
-}
-
-func (s *MatchingService) removeFromQueue(ctx context.Context, user QueueEntry) error {
-	queueKey := "queue:" + user.PracticeLanguage
-	userJSON, err := json.Marshal(user)
-	if err != nil {
-		return err
-	}
-
-	return s.redisClient.LRem(ctx, queueKey, 1, userJSON).Err()
 }
 
 func (s *MatchingService) notifyMatch(match *Match) error {

@@ -3,6 +3,7 @@ package matchmaking
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/redis/go-redis/v9"
@@ -17,6 +18,9 @@ type RedisClient interface {
 	LRem(ctx context.Context, key string, count int64, value interface{}) *redis.IntCmd
 	Publish(ctx context.Context, channel string, message interface{}) *redis.IntCmd
 	Subscribe(ctx context.Context, channels ...string) *redis.PubSub
+	Pipeline() redis.Pipeliner
+	HGet(ctx context.Context, key, field string) *redis.StringCmd
+	HDel(ctx context.Context, key string, fields ...string) *redis.IntCmd
 }
 
 type PubSubManager interface {
@@ -37,6 +41,10 @@ type QueueEntry struct {
 	Timestamp        time.Time `json:"timestamp"`
 }
 
+const (
+	usersDataHashKey = "users:data"
+)
+
 func NewMatchmakingService(redisClient RedisClient, pubSubManager PubSubManager) *MatchmakingService {
 	return &MatchmakingService{
 		redisClient:   redisClient,
@@ -54,8 +62,12 @@ func (ms *MatchmakingService) AddToQueue(ctx context.Context, entry QueueEntry) 
 
 	// Store user in Redis queue for their practice language (what they want to learn)
 	queueKey := "queue:" + entry.PracticeLanguage
-	if err := ms.redisClient.RPush(ctx, queueKey, entryJSON).Err(); err != nil {
-		return err
+	pipe := ms.redisClient.Pipeline()
+	pipe.HSet(ctx, usersDataHashKey, entry.UserID, entryJSON) // Store data in the hash.
+	pipe.RPush(ctx, queueKey, entry.UserID)                   // Store ID in the list (queue).
+	_, err = pipe.Exec(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to enqueue user '%s': %w", entry.UserID, err)
 	}
 
 	// Publish to native language channel so others practicing that language can see them
