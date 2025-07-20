@@ -77,7 +77,7 @@ func (s *MatchingService) listenToLanguageChannel(ctx context.Context, language 
 
 		if match != nil {
 			log.Printf("Match found! %s <-> %s", match.PracticeUser.UserID, match.NativeUser.UserID)
-			
+
 			// First create the session to ensure it's valid before removing users
 			if err := s.notifyMatch(match); err != nil {
 				log.Printf("Error creating session/notifying match: %v", err)
@@ -198,17 +198,17 @@ func (s *MatchingService) removeMatchedUsers(ctx context.Context, match *Match) 
 // removeUserFromAllQueues removes a user from all possible language queues and hash data
 func (s *MatchingService) removeUserFromAllQueues(ctx context.Context, user QueueEntry) error {
 	pipe := s.redisClient.Pipeline()
-	
+
 	// Remove from all possible language queues
 	// A user could potentially be in multiple queues if they were added multiple times
 	for _, language := range s.languages {
 		queueKey := "queue:" + language
 		pipe.LRem(ctx, queueKey, 0, user.UserID) // 0 means remove all occurrences
 	}
-	
+
 	// Remove user data from hash
 	pipe.HDel(ctx, usersDataHashKey, user.UserID)
-	
+
 	// Execute all commands
 	_, err := pipe.Exec(ctx)
 	if err != nil {
@@ -229,14 +229,14 @@ func (s *MatchingService) restorePracticeUserToQueue(ctx context.Context, user Q
 
 	// Use pipeline to restore both hash data and queue position
 	pipe := s.redisClient.Pipeline()
-	
+
 	// Restore user data to hash
 	pipe.HSet(ctx, usersDataHashKey, user.UserID, entryJSON)
-	
+
 	// Add user back to the front of their practice language queue (since they were already waiting)
 	queueKey := "queue:" + user.PracticeLanguage
 	pipe.LPush(ctx, queueKey, user.UserID)
-	
+
 	// Execute the pipeline
 	_, err = pipe.Exec(ctx)
 	if err != nil {

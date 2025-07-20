@@ -49,9 +49,12 @@ The matching algorithm pairs users where:
 - Start server: `go run main.go`
 - Install dependencies: `go mod tidy`
 - Format code: `go fmt ./...`
+- Lint code: `go vet ./...` 
 - Build: `go build`
+- Build binary: `go build -o langapp-backend`
 - Run tests: `go test ./...` (no tests currently exist)
 - Test specific package: `go test ./matchmaking`
+- Test with verbose output: `go test -v ./...`
 - Stop services: `docker-compose down`
 
 ## Testing Guidelines
@@ -71,8 +74,9 @@ Located in `test/scripts/` directory for local development testing:
 
 ## Dependencies
 - Go version: 1.23.2
-- Key packages: Chi router (v5.2.2), PostgreSQL driver (pgx/v5), Redis client (v9.11.0), Gorilla WebSocket (v1.5.3), Goose migrations (v3.24.3)
+- Key packages: Chi router (v5.2.2), PostgreSQL driver (pgx/v5), Redis client (v9.11.0), Gorilla WebSocket (v1.5.3), Goose migrations (v3.24.3), UUID generation (google/uuid)
 - External services: PostgreSQL (local development), Redis 7 (containerized via Docker)
+- No external linting tools configured - use standard Go tooling
 
 ## Database Configuration
 **PostgreSQL Environment Variables** (defaults for local development):

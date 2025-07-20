@@ -57,6 +57,7 @@ func main() {
 	matchingService := matchmaking.NewMatchingService(redisClient, pubSubManager, wsManager, sessionRepository, languageNames)
 	go matchingService.Start(ctx)
 
+
 	apiService := api.NewAPIService(matchmakingService, languagesService, wsManager)
 	r := api.NewRouter(apiService)
 

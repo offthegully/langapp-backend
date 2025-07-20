@@ -52,6 +52,10 @@ func (api *APIService) StartMatchmaking(w http.ResponseWriter, r *http.Request) 
 
 	err := api.matchmakingService.AddToQueue(r.Context(), queueEntry)
 	if err != nil {
+		if strings.Contains(err.Error(), "already in the matchmaking queue") {
+			http.Error(w, "User is already in the matchmaking queue", http.StatusConflict)
+			return
+		}
 		http.Error(w, "Failed to join queue", http.StatusInternalServerError)
 		return
 	}

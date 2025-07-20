@@ -47,16 +47,29 @@ INSERT INTO languages (name, short_name) VALUES
     ('Turkish', 'TR')
 ON CONFLICT (name) DO NOTHING;
 
+-- Create session_status table for storing valid session statuses
+CREATE TABLE IF NOT EXISTS session_status (
+    id SERIAL PRIMARY KEY,
+    status VARCHAR(20) NOT NULL UNIQUE,
+    description TEXT,
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Insert session status values
+INSERT INTO session_status (status, description) VALUES
+    ('pending', 'Session has been created but not yet started'),
+    ('active', 'Session is currently in progress'),
+    ('completed', 'Session has been completed successfully'),
+    ('cancelled', 'Session was cancelled before completion')
+ON CONFLICT (status) DO NOTHING;
+
 -- Create sessions table for storing language exchange session data
 CREATE TABLE IF NOT EXISTS sessions (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    user1_id VARCHAR(255) NOT NULL,
-    user2_id VARCHAR(255) NOT NULL,
-    user1_native_language VARCHAR(50) NOT NULL,
-    user1_practice_language VARCHAR(50) NOT NULL,
-    user2_native_language VARCHAR(50) NOT NULL,
-    user2_practice_language VARCHAR(50) NOT NULL,
-    status VARCHAR(20) DEFAULT 'active' CHECK (status IN ('active', 'completed', 'cancelled')),
+    practice_user_id VARCHAR(255) NOT NULL,
+    native_user_id VARCHAR(255) NOT NULL,
+    language VARCHAR(50) NOT NULL,
+    status VARCHAR(20) DEFAULT 'pending' NOT NULL REFERENCES session_status(status),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     ended_at TIMESTAMP WITH TIME ZONE,
@@ -66,8 +79,9 @@ CREATE TABLE IF NOT EXISTS sessions (
 -- Create indexes for better performance on sessions table
 CREATE INDEX IF NOT EXISTS idx_sessions_status ON sessions(status);
 CREATE INDEX IF NOT EXISTS idx_sessions_created_at ON sessions(created_at);
-CREATE INDEX IF NOT EXISTS idx_sessions_user1_id ON sessions(user1_id);
-CREATE INDEX IF NOT EXISTS idx_sessions_user2_id ON sessions(user2_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_practice_user_id ON sessions(practice_user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_native_user_id ON sessions(native_user_id);
+CREATE INDEX IF NOT EXISTS idx_sessions_language ON sessions(language);
 
 -- Create trigger to automatically update updated_at column for sessions
 CREATE TRIGGER update_sessions_updated_at
@@ -80,9 +94,13 @@ CREATE TRIGGER update_sessions_updated_at
 DROP TRIGGER IF EXISTS update_sessions_updated_at ON sessions;
 DROP INDEX IF EXISTS idx_sessions_status;
 DROP INDEX IF EXISTS idx_sessions_created_at;
-DROP INDEX IF EXISTS idx_sessions_user1_id;
-DROP INDEX IF EXISTS idx_sessions_user2_id;
+DROP INDEX IF EXISTS idx_sessions_practice_user_id;
+DROP INDEX IF EXISTS idx_sessions_native_user_id;
+DROP INDEX IF EXISTS idx_sessions_language;
 DROP TABLE IF EXISTS sessions;
+
+-- Drop session_status table
+DROP TABLE IF EXISTS session_status;
 
 -- Drop languages table and related objects
 DROP TRIGGER IF EXISTS update_languages_updated_at ON languages;

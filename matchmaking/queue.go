@@ -3,6 +3,7 @@ package matchmaking
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -55,6 +56,15 @@ func NewMatchmakingService(redisClient RedisClient, pubSubManager PubSubManager)
 }
 
 func (ms *MatchmakingService) AddToQueue(ctx context.Context, entry QueueEntry) error {
+	// Check if user is already in queue
+	inQueue, err := ms.IsUserInQueue(ctx, entry.UserID)
+	if err != nil {
+		return fmt.Errorf("failed to check if user is already in queue: %w", err)
+	}
+	if inQueue {
+		return fmt.Errorf("user '%s' is already in the matchmaking queue", entry.UserID)
+	}
+
 	entry.Timestamp = time.Now()
 
 	entryJSON, err := json.Marshal(entry)
@@ -114,4 +124,15 @@ func (ms *MatchmakingService) RemoveFromQueue(ctx context.Context, userID string
 
 func (ms *MatchmakingService) InitializeLanguageChannels(ctx context.Context, languages []string) error {
 	return ms.pubSubManager.InitializeLanguagePublishers(languages)
+}
+
+func (ms *MatchmakingService) IsUserInQueue(ctx context.Context, userID string) (bool, error) {
+	exists, err := ms.redisClient.HGet(ctx, usersDataHashKey, userID).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check if user '%s' is in queue: %w", userID, err)
+	}
+	return exists != "", nil
 }
