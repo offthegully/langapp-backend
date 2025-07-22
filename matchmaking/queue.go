@@ -55,44 +55,63 @@ func NewMatchmakingService(redisClient RedisClient, pubSubManager PubSubManager)
 	}
 }
 
-func (ms *MatchmakingService) AddToQueue(ctx context.Context, entry QueueEntry) error {
-	// Check if user is already in queue
-	inQueue, err := ms.IsUserInQueue(ctx, entry.UserID)
-	if err != nil {
-		return fmt.Errorf("failed to check if user is already in queue: %w", err)
-	}
-	if inQueue {
-		return fmt.Errorf("user '%s' is already in the matchmaking queue", entry.UserID)
+func (ms *MatchmakingService) InitiateMatchmaking(ctx context.Context, userID, nativeLanguage, practiceLanguage string) (QueueEntry, error) {
+	entry := QueueEntry{
+		UserID:           userID,
+		NativeLanguage:   nativeLanguage,
+		PracticeLanguage: practiceLanguage,
+		Timestamp:        time.Now(),
 	}
 
-	entry.Timestamp = time.Now()
+	// Check if user is already in queue
+	ms.dequeueUser(ctx, entry)
 
 	entryJSON, err := json.Marshal(entry)
 	if err != nil {
-		return err
+		return entry, err
 	}
 
 	// Store user in Redis queue for their practice language (what they want to learn)
-	queueKey := "queue:" + entry.PracticeLanguage
-	pipe := ms.redisClient.Pipeline()
-	pipe.HSet(ctx, usersDataHashKey, entry.UserID, entryJSON) // Store data in the hash.
-	pipe.RPush(ctx, queueKey, entry.UserID)                   // Store ID in the list (queue).
-	_, err = pipe.Exec(ctx)
+	err = ms.enqueueUser(ctx, entry, entryJSON)
 	if err != nil {
-		return fmt.Errorf("failed to enqueue user '%s': %w", entry.UserID, err)
+		return entry, fmt.Errorf("failed to enqueue user '%s': %w", entry.UserID, err)
 	}
 
 	// Publish to native language channel so others practicing that language can see them
 	err = ms.pubSubManager.PublishToLanguageChannel(ctx, entry.NativeLanguage, entryJSON)
 	if err != nil {
-		return err
+		return entry, err
 	}
 
+	return entry, nil
+}
+
+func (ms *MatchmakingService) CancelMatchmaking(ctx context.Context, userID string) error {
 	return nil
 }
 
-func (ms *MatchmakingService) RemoveFromQueue(ctx context.Context, userID string, practiceLanguage string) error {
-	queueKey := "queue:" + practiceLanguage
+func (ms *MatchmakingService) isUserInQueue(ctx context.Context, userID string) (bool, error) {
+	exists, err := ms.redisClient.HGet(ctx, usersDataHashKey, userID).Result()
+	if err != nil {
+		if errors.Is(err, redis.Nil) {
+			return false, nil
+		}
+		return false, fmt.Errorf("failed to check if user '%s' is in queue: %w", userID, err)
+	}
+	return exists != "", nil
+}
+
+func (ms *MatchmakingService) enqueueUser(ctx context.Context, entry QueueEntry, value []byte) error {
+	queueKey := "queue:" + entry.PracticeLanguage
+	pipe := ms.redisClient.Pipeline()
+	pipe.HSet(ctx, usersDataHashKey, entry.UserID, value) // Store data in the hash.
+	pipe.RPush(ctx, queueKey, entry.UserID)               // Store ID in the list (queue).
+	_, err := pipe.Exec(ctx)
+	return err
+}
+
+func (ms *MatchmakingService) dequeueUser(ctx context.Context, entry QueueEntry) error {
+	queueKey := "queue:" + entry.PracticeLanguage
 
 	// Get all entries in the queue to find the user
 	queueLength, err := ms.redisClient.LLen(ctx, queueKey).Result()
@@ -107,13 +126,13 @@ func (ms *MatchmakingService) RemoveFromQueue(ctx context.Context, userID string
 			continue
 		}
 
-		var entry QueueEntry
+		var storedEntry QueueEntry
 		if err := json.Unmarshal([]byte(entryJSON), &entry); err != nil {
 			continue
 		}
 
 		// If we found the user, remove them from the queue
-		if entry.UserID == userID {
+		if storedEntry.UserID == entry.UserID {
 			return ms.redisClient.LRem(ctx, queueKey, 1, entryJSON).Err()
 		}
 	}
@@ -124,15 +143,4 @@ func (ms *MatchmakingService) RemoveFromQueue(ctx context.Context, userID string
 
 func (ms *MatchmakingService) InitializeLanguageChannels(ctx context.Context, languages []string) error {
 	return ms.pubSubManager.InitializeLanguagePublishers(languages)
-}
-
-func (ms *MatchmakingService) IsUserInQueue(ctx context.Context, userID string) (bool, error) {
-	exists, err := ms.redisClient.HGet(ctx, usersDataHashKey, userID).Result()
-	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			return false, nil
-		}
-		return false, fmt.Errorf("failed to check if user '%s' is in queue: %w", userID, err)
-	}
-	return exists != "", nil
 }

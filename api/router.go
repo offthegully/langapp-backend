@@ -11,8 +11,8 @@ import (
 )
 
 type MatchmakingService interface {
-	AddToQueue(ctx context.Context, entry matchmaking.QueueEntry) error
-	RemoveFromQueue(ctx context.Context, userID string, practiceLanguage string) error
+	InitiateMatchmaking(ctx context.Context, userID, nativeLanguage, practiceLanguage string) (matchmaking.QueueEntry, error)
+	CancelMatchmaking(ctx context.Context, userID string) error
 }
 
 type LanguagesService interface {

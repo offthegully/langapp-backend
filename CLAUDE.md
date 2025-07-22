@@ -41,7 +41,7 @@ The matching algorithm pairs users where:
   - `languages.go` - Supported languages list and validation functions
 - `websocket/` - WebSocket connection management
   - `manager.go` - WebSocket client management and real-time messaging
-- `docker-compose.yml` - Redis container for local development
+- `docker-compose.yml` - Redis and PostgreSQL containers for local development
 - `openapi.yaml` - OpenAPI 3.0 specification for all endpoints
 
 ## Development Commands
@@ -95,6 +95,7 @@ Located in `test/scripts/` directory for local development testing:
 - **Interface segregation**: Clean interfaces for database operations
 - **Defensive initialization**: Each component ensures its dependencies are properly initialized
 - **Separation of concerns**: API handlers in api/, business logic in matchmaking/, data access in storage/
+- **API Handler Location**: ALL API handlers MUST be placed in the /api package - no exceptions
 - **Chi middleware**: Logging and panic recovery at HTTP layer
 - **JSON validation**: Request/response validation with struct tags
 - **Language validation**: Database-driven language validation with repository pattern
@@ -122,6 +123,28 @@ Located in `test/scripts/` directory for local development testing:
 - Redis operations abstracted through MatchmakingService interface
 - PostgreSQL operations abstracted through repository pattern
 - Session creation and tracking handled by session repository
+
+## Redis Architecture
+The system uses Redis for real-time matchmaking with the following patterns:
+- **Queue Storage**: Users are stored in language-specific queues (`queue:{language}`) using Redis lists
+- **User Data Hash**: User details stored in a central hash (`users:data`) with user_id as key
+- **Pub/Sub Channels**: Language-specific channels (`matchmaking:{language}`) for real-time matching
+- **FIFO Matching**: Users are matched in first-in-first-out order using `LPOP` operations
+- **Atomic Operations**: Pipeline operations ensure data consistency during queue operations
+
+## WebSocket System
+- **Connection Management**: WebSocket manager maintains active connections per user
+- **Match Notifications**: Real-time notifications sent to both users when matched
+- **Connection URL**: Dynamic WebSocket URL generation based on request context
+- **Error Handling**: Graceful handling of connection failures and cleanup
+
+## Matching Algorithm Details
+1. **Queue Addition**: User joins queue for their practice language and publishes to their native language channel
+2. **Real-time Listening**: Matching service listens to all language channels simultaneously
+3. **Complementary Matching**: When a user publishes, system looks for complementary users in appropriate queue
+4. **Session Creation**: Successful matches create database sessions before user notification
+5. **Queue Cleanup**: Both users removed from all queues after successful matching
+6. **Failure Recovery**: Practice users restored to queue if session creation fails
 
 ## Current Implementation Status
 - ✅ Complete API structure with validation

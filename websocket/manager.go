@@ -97,17 +97,21 @@ func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 }
 
 func (m *Manager) NotifyMatch(userID string, notification MatchNotification) error {
+	message := Message{
+		Type: "match_found",
+		Data: notification,
+	}
+
+	return m.SendMessage(userID, message)
+}
+
+func (m *Manager) SendMessage(userID string, message Message) error {
 	m.mutex.RLock()
 	client, exists := m.clients[userID]
 	m.mutex.RUnlock()
 
 	if !exists {
 		return nil
-	}
-
-	message := Message{
-		Type: "match_found",
-		Data: notification,
 	}
 
 	data, err := json.Marshal(message)

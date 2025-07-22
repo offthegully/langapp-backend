@@ -12,10 +12,11 @@ import (
 type SessionStatus string
 
 const (
-	SessionPending   SessionStatus = "pending"
-	SessionActive    SessionStatus = "active"
-	SessionCompleted SessionStatus = "completed"
-	SessionCancelled SessionStatus = "cancelled"
+	SessionMatched    SessionStatus = "matched"    // Users matched, not yet connected
+	SessionConnecting SessionStatus = "connecting" // WebRTC negotiation in progress
+	SessionActive     SessionStatus = "active"     // Audio call in progress
+	SessionCompleted  SessionStatus = "completed"  // Call ended normally
+	SessionFailed     SessionStatus = "failed"     // Connection failed
 )
 
 type Session struct {
@@ -40,7 +41,7 @@ func NewRepository(db *storage.PostgresClient) *Repository {
 	}
 }
 
-func (r *Repository) CreateSession(ctx context.Context, practiceUserID, nativeUserID, language string) (*Session, error) {
+func (r *Repository) CreateSession(ctx context.Context, user1ID, user2ID string, user1Native, user1Practice, user2Native, user2Practice string) (*Session, error) {
 	return nil, nil
 }
 

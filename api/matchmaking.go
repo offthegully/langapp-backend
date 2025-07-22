@@ -6,8 +6,6 @@ import (
 	"net/http"
 	"strings"
 	"time"
-
-	"langapp-backend/matchmaking"
 )
 
 type StartMatchmakingRequest struct {
@@ -44,25 +42,19 @@ func (api *APIService) StartMatchmaking(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	queueEntry := matchmaking.QueueEntry{
-		UserID:           req.UserID,
-		NativeLanguage:   req.NativeLanguage,
-		PracticeLanguage: req.PracticeLanguage,
-	}
+	userID := req.UserID
+	nativeLanguage := req.NativeLanguage
+	practiceLanguage := req.PracticeLanguage
 
-	err := api.matchmakingService.AddToQueue(r.Context(), queueEntry)
+	entry, err := api.matchmakingService.InitiateMatchmaking(r.Context(), userID, nativeLanguage, practiceLanguage)
 	if err != nil {
-		if strings.Contains(err.Error(), "already in the matchmaking queue") {
-			http.Error(w, "User is already in the matchmaking queue", http.StatusConflict)
-			return
-		}
 		http.Error(w, "Failed to join queue", http.StatusInternalServerError)
 		return
 	}
 
 	response := StartMatchmakingResponse{
 		Message:      "Successfully joined matchmaking queue. Connect to the WebSocket URL to receive match notifications.",
-		QueuedAt:     queueEntry.Timestamp,
+		QueuedAt:     entry.Timestamp,
 		WebSocketURL: api.getWebSocketURL(req.UserID, r),
 	}
 
@@ -84,7 +76,7 @@ func (api *APIService) CancelMatchmaking(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	err := api.matchmakingService.RemoveFromQueue(r.Context(), req.UserID, req.PracticeLanguage)
+	err := api.matchmakingService.CancelMatchmaking(r.Context(), req.UserID)
 	if err != nil {
 		http.Error(w, "Failed to remove from queue", http.StatusInternalServerError)
 		return
