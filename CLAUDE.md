@@ -28,6 +28,7 @@ The matching algorithm pairs users where:
   - `router.go` - Chi router setup with middleware and route definitions
   - `matchmaking.go` - Matchmaking API handlers (StartMatchmaking, CancelMatchmaking)
   - `languages.go` - Languages API handler (GetLanguagesHandler)
+  - `signaling.go` - WebRTC signaling handlers for audio call setup
 - `matchmaking/` - Core matchmaking business logic
   - `queue.go` - MatchmakingService and QueueEntry structs with Redis interface
   - `matching.go` - MatchingService for real-time match discovery and WebSocket notifications
@@ -39,6 +40,8 @@ The matching algorithm pairs users where:
   - `session.go` - Session repository with CRUD operations and status tracking
 - `languages/` - Language validation and constants
   - `languages.go` - Supported languages list and validation functions
+- `signaling/` - WebRTC signaling service for audio call coordination
+  - `service.go` - WebRTC signaling service implementation
 - `websocket/` - WebSocket connection management
   - `manager.go` - WebSocket client management and real-time messaging
 - `docker-compose.yml` - Redis and PostgreSQL containers for local development
@@ -91,6 +94,7 @@ Located in `test/scripts/` directory for local development testing:
 ## Architecture Patterns
 - **Clean dependency injection**: main.go creates and wires all dependencies with proper initialization
 - **Database migrations**: Embedded SQL migrations run automatically on startup using Goose
+- **Migration Policy**: Since this application is not yet in production, modify the existing `001_init.sql` migration file directly instead of creating new migration files. Only create new migrations once the application is deployed to production.
 - **Dual storage**: PostgreSQL for persistent data (sessions, languages), Redis for temporary matchmaking queue
 - **Interface segregation**: Clean interfaces for database operations
 - **Defensive initialization**: Each component ensures its dependencies are properly initialized
@@ -107,6 +111,7 @@ Located in `test/scripts/` directory for local development testing:
 - `POST /queue` - Join matchmaking queue (requires user_id, native_language, practice_language)
 - `DELETE /queue` - Cancel queue participation (requires user_id)
 - `GET /ws?user_id={id}` - WebSocket connection for real-time match notifications
+- WebRTC signaling endpoints for audio call setup (implementation in progress)
 
 ## Key Types
 - `matchmaking.QueueEntry` - User queue data with languages and timestamp
@@ -116,6 +121,7 @@ Located in `test/scripts/` directory for local development testing:
 - `session.Repository` - Database repository for session CRUD operations
 - `languages.Language` - Language struct with Name and ShortName fields
 - `websocket.Manager` - WebSocket connection manager for real-time messaging
+- `signaling.Service` - WebRTC signaling service for coordinating audio calls
 
 ## Service Integration
 - API handlers call service methods (note: method calls should be on service instance, not package functions)
@@ -159,4 +165,5 @@ The system uses Redis for real-time matchmaking with the following patterns:
 - ✅ OpenAPI specification documentation
 - ✅ RemoveFromQueue implemented with Redis queue search and removal
 - ✅ Test scripts for local development and WebSocket testing
+- 🚧 WebRTC signaling infrastructure (signaling package structure in place)
 - ❌ No formal test coverage exists (only manual test scripts)

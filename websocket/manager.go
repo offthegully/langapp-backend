@@ -29,7 +29,6 @@ type Message struct {
 }
 
 type MatchNotification struct {
-	MatchID   string `json:"match_id"`
 	PartnerID string `json:"partner_id"`
 	Language  string `json:"language"`
 	Message   string `json:"message"`

@@ -3,7 +3,6 @@ package matchmaking
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"fmt"
 	"time"
 
@@ -88,17 +87,6 @@ func (ms *MatchmakingService) InitiateMatchmaking(ctx context.Context, userID, n
 
 func (ms *MatchmakingService) CancelMatchmaking(ctx context.Context, userID string) error {
 	return nil
-}
-
-func (ms *MatchmakingService) isUserInQueue(ctx context.Context, userID string) (bool, error) {
-	exists, err := ms.redisClient.HGet(ctx, usersDataHashKey, userID).Result()
-	if err != nil {
-		if errors.Is(err, redis.Nil) {
-			return false, nil
-		}
-		return false, fmt.Errorf("failed to check if user '%s' is in queue: %w", userID, err)
-	}
-	return exists != "", nil
 }
 
 func (ms *MatchmakingService) enqueueUser(ctx context.Context, entry QueueEntry, value []byte) error {

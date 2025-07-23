@@ -57,10 +57,11 @@ CREATE TABLE IF NOT EXISTS session_status (
 
 -- Insert session status values
 INSERT INTO session_status (status, description) VALUES
-    ('pending', 'Session has been created but not yet started'),
-    ('active', 'Session is currently in progress'),
-    ('completed', 'Session has been completed successfully'),
-    ('cancelled', 'Session was cancelled before completion')
+    ('matched', 'Users matched, not yet connected'),
+    ('connecting', 'WebRTC negotiation in progress'),
+    ('active', 'Audio call in progress'),
+    ('completed', 'Call ended normally'),
+    ('failed', 'Connection failed')
 ON CONFLICT (status) DO NOTHING;
 
 -- Create sessions table for storing language exchange session data
@@ -69,7 +70,7 @@ CREATE TABLE IF NOT EXISTS sessions (
     practice_user_id VARCHAR(255) NOT NULL,
     native_user_id VARCHAR(255) NOT NULL,
     language VARCHAR(50) NOT NULL,
-    status VARCHAR(20) DEFAULT 'pending' NOT NULL REFERENCES session_status(status),
+    status VARCHAR(20) DEFAULT 'matched' NOT NULL REFERENCES session_status(status),
     created_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP,
     ended_at TIMESTAMP WITH TIME ZONE,

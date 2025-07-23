@@ -28,8 +28,6 @@ type MatchingService struct {
 }
 
 type Match struct {
-	ID           string     `json:"match_id"`
-	SessionID    string     `json:"session_id"`
 	PracticeUser QueueEntry `json:"practice_user"`
 	NativeUser   QueueEntry `json:"native_user"`
 	Language     string     `json:"language"`
@@ -130,10 +128,7 @@ func (s *MatchingService) findMatch(ctx context.Context, nativeEntry QueueEntry)
 		return nil, fmt.Errorf("failed to unmarshal data for user '%s': %w", userID, err)
 	}
 
-	matchID := fmt.Sprintf("match_%d", time.Now().Unix())
-
 	match := &Match{
-		ID:           matchID,
 		PracticeUser: practiceEntry,
 		NativeUser:   nativeEntry,
 		Language:     practiceEntry.PracticeLanguage,
@@ -259,24 +254,20 @@ func (s *MatchingService) notifyMatch(match *Match) error {
 		match.NativeUser.PracticeLanguage,
 	)
 	if err != nil {
-		log.Printf("Failed to create session for match %s: %v", match.ID, err)
+		log.Printf("Failed to create session for match: %v", err)
 		return err
 	}
 
-	match.SessionID = session.ID.String()
-
-	log.Printf("Created session %s for match %s - Language: %s", session.ID.String(), match.ID, match.Language)
+	log.Printf("Created session %s for match - Language: %s", session.ID.String(), match.Language)
 
 	// User1 is the learner, User2 is the native speaker
 	learnerNotification := websocket.MatchNotification{
-		MatchID:   match.ID,
 		PartnerID: match.NativeUser.UserID,
 		Language:  match.Language,
 		Message:   fmt.Sprintf("Match found! You'll practice %s with %s", match.Language, match.NativeUser.UserID),
 	}
 
 	nativeNotification := websocket.MatchNotification{
-		MatchID:   match.ID,
 		PartnerID: match.PracticeUser.UserID,
 		Language:  match.Language,
 		Message:   fmt.Sprintf("Match found! You'll help %s practice %s", match.PracticeUser.UserID, match.Language),
