@@ -44,7 +44,3 @@ func (psm *PubSubManager) SubscribeToLanguageChannel(ctx context.Context, langua
 	channelName := fmt.Sprintf("matchmaking:%s", language)
 	return psm.client.Subscribe(ctx, channelName)
 }
-
-func (psm *PubSubManager) GetChannelName(language string) string {
-	return fmt.Sprintf("matchmaking:%s", language)
-}
