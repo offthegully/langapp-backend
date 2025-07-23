@@ -83,7 +83,7 @@ func (ms *MatchmakingService) listenToLanguageChannel(ctx context.Context, langu
 			log.Printf("Match found! %s <-> %s", match.PracticeUser.UserID, match.NativeUser.UserID)
 
 			// First create the session to ensure it's valid before removing users
-			if err := ms.notifyMatch(match); err != nil {
+			if err := ms.notifyMatch(ctx, match); err != nil {
 				log.Printf("Error creating session/notifying match: %v", err)
 				// If session creation fails, try to restore the practice user to queue
 				if restoreErr := ms.restorePracticeUserToQueue(ctx, match.PracticeUser); restoreErr != nil {
@@ -248,9 +248,8 @@ func (ms *MatchmakingService) restorePracticeUserToQueue(ctx context.Context, us
 	return nil
 }
 
-func (ms *MatchmakingService) notifyMatch(match *Match) error {
+func (ms *MatchmakingService) notifyMatch(ctx context.Context, match *Match) error {
 	// Create session in database
-	ctx := context.Background()
 	session, err := ms.sessionRepository.CreateSession(ctx,
 		match.PracticeUser.UserID,
 		match.NativeUser.UserID,

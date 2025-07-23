@@ -20,7 +20,7 @@ func main() {
 	redisClient := redis.NewRedisClient()
 	pubSubManager := redis.NewPubSubManager(redisClient)
 
-	postgresClient := postgres.NewPostgresClient()
+	postgresClient := postgres.NewPostgresClient(ctx)
 	defer postgresClient.Close()
 
 	// Run database migrations

@@ -18,7 +18,7 @@ type PostgresClient struct {
 	pool *pgxpool.Pool
 }
 
-func NewPostgresClient() *PostgresClient {
+func NewPostgresClient(ctx context.Context) *PostgresClient {
 	// Default connection parameters for local development
 	host := getEnv("POSTGRES_HOST", "localhost")
 	port := getEnv("POSTGRES_PORT", "5432")
@@ -38,13 +38,12 @@ func NewPostgresClient() *PostgresClient {
 	config.MaxConns = 25
 	config.MinConns = 5
 
-	pool, err := pgxpool.NewWithConfig(context.Background(), config)
+	pool, err := pgxpool.NewWithConfig(ctx, config)
 	if err != nil {
 		log.Fatalf("Unable to create postgres connection pool: %v", err)
 	}
 
 	// Test the connection
-	ctx := context.Background()
 	if err := pool.Ping(ctx); err != nil {
 		log.Fatalf("Unable to connect to postgres: %v", err)
 	}
