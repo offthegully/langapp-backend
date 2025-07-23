@@ -12,14 +12,6 @@ type PubSubManager struct {
 	publishers map[string]*redis.Client
 }
 
-func NewRedisClient() *redis.Client {
-	return redis.NewClient(&redis.Options{
-		Addr:     "localhost:6379",
-		Password: "",
-		DB:       0,
-	})
-}
-
 func NewPubSubManager(client *redis.Client) *PubSubManager {
 	return &PubSubManager{
 		client:     client,
