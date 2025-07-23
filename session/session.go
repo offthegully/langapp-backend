@@ -3,9 +3,8 @@ package session
 import (
 	"context"
 	"fmt"
+	"langapp-backend/storage/postgres"
 	"time"
-
-	"langapp-backend/storage"
 
 	"github.com/google/uuid"
 )
@@ -33,10 +32,10 @@ type Session struct {
 }
 
 type Repository struct {
-	db *storage.PostgresClient
+	db *postgres.PostgresClient
 }
 
-func NewRepository(db *storage.PostgresClient) *Repository {
+func NewRepository(db *postgres.PostgresClient) *Repository {
 	return &Repository{
 		db: db,
 	}

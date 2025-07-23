@@ -9,17 +9,18 @@ import (
 	"langapp-backend/languages"
 	"langapp-backend/matchmaking"
 	"langapp-backend/session"
-	"langapp-backend/storage"
+	"langapp-backend/storage/postgres"
+	"langapp-backend/storage/redis"
 	"langapp-backend/websocket"
 )
 
 func main() {
 	ctx := context.Background()
 
-	redisClient := storage.NewRedisClient()
-	pubSubManager := storage.NewPubSubManager(redisClient)
+	redisClient := redis.NewRedisClient()
+	pubSubManager := redis.NewPubSubManager(redisClient)
 
-	postgresClient := storage.NewPostgresClient()
+	postgresClient := postgres.NewPostgresClient()
 	defer postgresClient.Close()
 
 	// Run database migrations

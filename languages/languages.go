@@ -4,8 +4,9 @@ import (
 	"context"
 	"time"
 
+	"langapp-backend/storage/postgres"
+
 	"github.com/jackc/pgx/v5"
-	"langapp-backend/storage"
 )
 
 type Language struct {
@@ -18,10 +19,10 @@ type Language struct {
 }
 
 type Repository struct {
-	db *storage.PostgresClient
+	db *postgres.PostgresClient
 }
 
-func NewRepository(db *storage.PostgresClient) *Repository {
+func NewRepository(db *postgres.PostgresClient) *Repository {
 	return &Repository{
 		db: db,
 	}
