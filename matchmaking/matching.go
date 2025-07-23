@@ -19,7 +19,7 @@ type SessionRepository interface {
 	GetSessionByUserID(ctx context.Context, userID string) (*session.Session, error)
 }
 
-type MatchingService struct {
+type MatchmakingService struct {
 	redisClient       RedisClient
 	pubSubManager     PubSubManager
 	wsManager         *websocket.Manager
@@ -40,8 +40,8 @@ type MatchNotification struct {
 	Message   string `json:"message"`
 }
 
-func NewMatchingService(redisClient RedisClient, pubSubManager PubSubManager, wsManager *websocket.Manager, sessionRepository SessionRepository, languages []string) *MatchingService {
-	return &MatchingService{
+func NewMatchmakingService(redisClient RedisClient, pubSubManager PubSubManager, wsManager *websocket.Manager, sessionRepository SessionRepository, languages []string) *MatchmakingService {
+	return &MatchmakingService{
 		redisClient:       redisClient,
 		pubSubManager:     pubSubManager,
 		wsManager:         wsManager,
@@ -50,15 +50,15 @@ func NewMatchingService(redisClient RedisClient, pubSubManager PubSubManager, ws
 	}
 }
 
-func (s *MatchingService) Start(ctx context.Context) {
-	for _, language := range s.languages {
-		go s.listenToLanguageChannel(ctx, language)
+func (ms *MatchmakingService) Start(ctx context.Context) {
+	for _, language := range ms.languages {
+		go ms.listenToLanguageChannel(ctx, language)
 	}
-	log.Printf("Matching service started for %d languages", len(s.languages))
+	log.Printf("Matching service started for %d languages", len(ms.languages))
 }
 
-func (s *MatchingService) listenToLanguageChannel(ctx context.Context, language string) {
-	pubsub := s.pubSubManager.SubscribeToLanguageChannel(ctx, language)
+func (ms *MatchmakingService) listenToLanguageChannel(ctx context.Context, language string) {
+	pubsub := ms.pubSubManager.SubscribeToLanguageChannel(ctx, language)
 	defer pubsub.Close()
 
 	log.Printf("Listening to channel for language: %s", language)
@@ -73,7 +73,7 @@ func (s *MatchingService) listenToLanguageChannel(ctx context.Context, language 
 
 		log.Printf("New user in %s channel: %s (native: %s, practice: %s)", language, nativeEntry.UserID, nativeEntry.NativeLanguage, nativeEntry.PracticeLanguage)
 
-		match, err := s.findMatch(ctx, nativeEntry)
+		match, err := ms.findMatch(ctx, nativeEntry)
 		if err != nil {
 			log.Printf("Error finding match: %v", err)
 			continue
@@ -83,17 +83,17 @@ func (s *MatchingService) listenToLanguageChannel(ctx context.Context, language 
 			log.Printf("Match found! %s <-> %s", match.PracticeUser.UserID, match.NativeUser.UserID)
 
 			// First create the session to ensure it's valid before removing users
-			if err := s.notifyMatch(match); err != nil {
+			if err := ms.notifyMatch(match); err != nil {
 				log.Printf("Error creating session/notifying match: %v", err)
 				// If session creation fails, try to restore the practice user to queue
-				if restoreErr := s.restorePracticeUserToQueue(ctx, match.PracticeUser); restoreErr != nil {
+				if restoreErr := ms.restorePracticeUserToQueue(ctx, match.PracticeUser); restoreErr != nil {
 					log.Printf("Failed to restore practice user to queue: %v", restoreErr)
 				}
 				continue
 			}
 
 			// Only after successful session creation, remove both users from all queues
-			if err := s.removeMatchedUsers(ctx, match); err != nil {
+			if err := ms.removeMatchedUsers(ctx, match); err != nil {
 				log.Printf("Warning: Error removing matched users (session already created): %v", err)
 				// Don't fail here since the session is already created and users notified
 			}
@@ -101,12 +101,12 @@ func (s *MatchingService) listenToLanguageChannel(ctx context.Context, language 
 	}
 }
 
-func (s *MatchingService) findMatch(ctx context.Context, nativeEntry QueueEntry) (*Match, error) {
+func (ms *MatchmakingService) findMatch(ctx context.Context, nativeEntry QueueEntry) (*Match, error) {
 	language := nativeEntry.NativeLanguage
 	queueKey := "queue:" + language
 
 	// 1. Pop the next user ID from the left of the list (FIFO).
-	userID, err := s.redisClient.LPop(ctx, queueKey).Result()
+	userID, err := ms.redisClient.LPop(ctx, queueKey).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
 			// This is an expected error when the queue is empty.
@@ -116,14 +116,14 @@ func (s *MatchingService) findMatch(ctx context.Context, nativeEntry QueueEntry)
 	}
 
 	// 2. Get the user's data from the hash.
-	entryJSON, err := s.redisClient.HGet(ctx, usersDataHashKey, userID).Result()
+	entryJSON, err := ms.redisClient.HGet(ctx, usersDataHashKey, userID).Result()
 	if err != nil {
 		// If data is missing for some reason, return an error.
 		return nil, fmt.Errorf("could not find data for user '%s': %w", userID, err)
 	}
 
 	// 3. Clean up the user's data from the hash.
-	if err := s.redisClient.HDel(ctx, usersDataHashKey, userID).Err(); err != nil {
+	if err := ms.redisClient.HDel(ctx, usersDataHashKey, userID).Err(); err != nil {
 		log.Printf("Warning: failed to clean up user data for '%s': %v", userID, err)
 		// Continue anyway since we have the data we need
 	}
@@ -144,11 +144,11 @@ func (s *MatchingService) findMatch(ctx context.Context, nativeEntry QueueEntry)
 	return match, nil
 }
 
-func (s *MatchingService) Remove(ctx context.Context, language, userID string) error {
+func (ms *MatchmakingService) Remove(ctx context.Context, language, userID string) error {
 	queueKey := "queue:" + language
 
 	// Use a pipeline for efficiency.
-	pipe := s.redisClient.Pipeline()
+	pipe := ms.redisClient.Pipeline()
 	// Command to remove the user ID from the queue list.
 	lremResult := pipe.LRem(ctx, queueKey, 1, userID)
 	// Command to delete the user data from the hash.
@@ -169,18 +169,18 @@ func (s *MatchingService) Remove(ctx context.Context, language, userID string) e
 }
 
 // removeMatchedUsers removes both users from all possible queues and cleans up their data
-func (s *MatchingService) removeMatchedUsers(ctx context.Context, match *Match) error {
+func (ms *MatchmakingService) removeMatchedUsers(ctx context.Context, match *Match) error {
 	var errors []error
 
 	// Remove the native user from their queue (they were listening on pubsub)
 	// The native user would be in the queue for their practice language
-	if err := s.removeUserFromAllQueues(ctx, match.NativeUser); err != nil {
+	if err := ms.removeUserFromAllQueues(ctx, match.NativeUser); err != nil {
 		errors = append(errors, fmt.Errorf("failed to remove native user %s: %w", match.NativeUser.UserID, err))
 	}
 
 	// The practice user was already popped from their queue in findMatch,
 	// but we should ensure they're cleaned up from the hash and any other queues
-	if err := s.removeUserFromAllQueues(ctx, match.PracticeUser); err != nil {
+	if err := ms.removeUserFromAllQueues(ctx, match.PracticeUser); err != nil {
 		errors = append(errors, fmt.Errorf("failed to remove practice user %s: %w", match.PracticeUser.UserID, err))
 	}
 
@@ -197,12 +197,12 @@ func (s *MatchingService) removeMatchedUsers(ctx context.Context, match *Match) 
 }
 
 // removeUserFromAllQueues removes a user from all possible language queues and hash data
-func (s *MatchingService) removeUserFromAllQueues(ctx context.Context, user QueueEntry) error {
-	pipe := s.redisClient.Pipeline()
+func (ms *MatchmakingService) removeUserFromAllQueues(ctx context.Context, user QueueEntry) error {
+	pipe := ms.redisClient.Pipeline()
 
 	// Remove from all possible language queues
 	// A user could potentially be in multiple queues if they were added multiple times
-	for _, language := range s.languages {
+	for _, language := range ms.languages {
 		queueKey := "queue:" + language
 		pipe.LRem(ctx, queueKey, 0, user.UserID) // 0 means remove all occurrences
 	}
@@ -221,7 +221,7 @@ func (s *MatchingService) removeUserFromAllQueues(ctx context.Context, user Queu
 }
 
 // restorePracticeUserToQueue restores a practice user back to their queue if session creation fails
-func (s *MatchingService) restorePracticeUserToQueue(ctx context.Context, user QueueEntry) error {
+func (ms *MatchmakingService) restorePracticeUserToQueue(ctx context.Context, user QueueEntry) error {
 	// Re-marshal the user data
 	entryJSON, err := json.Marshal(user)
 	if err != nil {
@@ -229,7 +229,7 @@ func (s *MatchingService) restorePracticeUserToQueue(ctx context.Context, user Q
 	}
 
 	// Use pipeline to restore both hash data and queue position
-	pipe := s.redisClient.Pipeline()
+	pipe := ms.redisClient.Pipeline()
 
 	// Restore user data to hash
 	pipe.HSet(ctx, usersDataHashKey, user.UserID, entryJSON)
@@ -248,10 +248,10 @@ func (s *MatchingService) restorePracticeUserToQueue(ctx context.Context, user Q
 	return nil
 }
 
-func (s *MatchingService) notifyMatch(match *Match) error {
+func (ms *MatchmakingService) notifyMatch(match *Match) error {
 	// Create session in database
 	ctx := context.Background()
-	session, err := s.sessionRepository.CreateSession(ctx,
+	session, err := ms.sessionRepository.CreateSession(ctx,
 		match.PracticeUser.UserID,
 		match.NativeUser.UserID,
 		match.Language,
@@ -281,11 +281,11 @@ func (s *MatchingService) notifyMatch(match *Match) error {
 		},
 	}
 
-	if err := s.wsManager.SendMessage(match.PracticeUser.UserID, practiceUserMessage); err != nil {
+	if err := ms.wsManager.SendMessage(match.PracticeUser.UserID, practiceUserMessage); err != nil {
 		log.Printf("Failed to notify practice user %s: %v", match.PracticeUser.UserID, err)
 	}
 
-	if err := s.wsManager.SendMessage(match.NativeUser.UserID, nativeUserMessage); err != nil {
+	if err := ms.wsManager.SendMessage(match.NativeUser.UserID, nativeUserMessage); err != nil {
 		log.Printf("Failed to notify native user %s: %v", match.NativeUser.UserID, err)
 	}
 

@@ -45,17 +45,14 @@ func main() {
 		log.Fatalf("Failed to initialize language publishers: %v", err)
 	}
 
-	matchmakingService := matchmaking.NewMatchmakingService(redisClient, pubSubManager)
-
-	if err := matchmakingService.InitializeLanguageChannels(ctx, languageNames); err != nil {
-		log.Fatalf("Failed to initialize language channels: %v", err)
-	}
-
 	wsManager := websocket.NewManager()
 	go wsManager.Start()
 
-	matchingService := matchmaking.NewMatchingService(redisClient, pubSubManager, wsManager, sessionRepository, languageNames)
-	go matchingService.Start(ctx)
+	matchmakingService := matchmaking.NewMatchmakingService(redisClient, pubSubManager, wsManager, sessionRepository, languageNames)
+	if err := matchmakingService.InitializeLanguageChannels(ctx, languageNames); err != nil {
+		log.Fatalf("Failed to initialize language channels: %v", err)
+	}
+	go matchmakingService.Start(ctx)
 
 	apiService := api.NewAPIService(matchmakingService, languagesService, wsManager)
 	r := api.NewRouter(apiService)

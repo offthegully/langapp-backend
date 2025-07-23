@@ -31,11 +31,6 @@ type PubSubManager interface {
 	InitializeLanguagePublishers(languages []string) error
 }
 
-type MatchmakingService struct {
-	redisClient   RedisClient
-	pubSubManager PubSubManager
-}
-
 type QueueEntry struct {
 	UserID           string    `json:"user_id"`
 	NativeLanguage   string    `json:"native_language"`
@@ -46,13 +41,6 @@ type QueueEntry struct {
 const (
 	usersDataHashKey = "users:data"
 )
-
-func NewMatchmakingService(redisClient RedisClient, pubSubManager PubSubManager) *MatchmakingService {
-	return &MatchmakingService{
-		redisClient:   redisClient,
-		pubSubManager: pubSubManager,
-	}
-}
 
 func (ms *MatchmakingService) InitiateMatchmaking(ctx context.Context, userID, nativeLanguage, practiceLanguage string) (QueueEntry, error) {
 	entry := QueueEntry{
