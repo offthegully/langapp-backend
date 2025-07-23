@@ -15,8 +15,8 @@ import (
 )
 
 type SessionRepository interface {
-	CreateSession(ctx context.Context, user1ID, user2ID string, user1Native, user1Practice, user2Native, user2Practice string) (*session.Session, error)
-	GetActiveSessionByUserID(ctx context.Context, userID string) (*session.Session, error)
+	CreateSession(ctx context.Context, practiceUserID, nativeUserID, language string) (*session.Session, error)
+	GetSessionByUserID(ctx context.Context, userID string) (*session.Session, error)
 }
 
 type MatchingService struct {
@@ -248,10 +248,7 @@ func (s *MatchingService) notifyMatch(match *Match) error {
 	session, err := s.sessionRepository.CreateSession(ctx,
 		match.PracticeUser.UserID,
 		match.NativeUser.UserID,
-		match.PracticeUser.NativeLanguage,
-		match.PracticeUser.PracticeLanguage,
-		match.NativeUser.NativeLanguage,
-		match.NativeUser.PracticeLanguage,
+		match.Language,
 	)
 	if err != nil {
 		log.Printf("Failed to create session for match: %v", err)
