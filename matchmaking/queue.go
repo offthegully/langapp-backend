@@ -42,79 +42,79 @@ const (
 	usersDataHashKey = "users:data"
 )
 
-func (ms *MatchmakingService) InitiateMatchmaking(ctx context.Context, userID, nativeLanguage, practiceLanguage string) (QueueEntry, error) {
+func (ms *MatchmakingService) InitiateMatchmaking(ctx context.Context, userID, nativeLanguage, practiceLanguage string) (*QueueEntry, error) {
 	entry := QueueEntry{
 		UserID:           userID,
 		NativeLanguage:   nativeLanguage,
 		PracticeLanguage: practiceLanguage,
 		Timestamp:        time.Now(),
 	}
-
-	// Check if user is already in queue
-	ms.dequeueUser(ctx, entry)
+	ms.dequeueUserByEntry(ctx, entry)
 
 	entryJSON, err := json.Marshal(entry)
 	if err != nil {
-		return entry, err
+		return nil, err
 	}
 
-	// Store user in Redis queue for their practice language (what they want to learn)
 	err = ms.enqueueUser(ctx, entry, entryJSON)
 	if err != nil {
-		return entry, fmt.Errorf("failed to enqueue user '%s': %w", entry.UserID, err)
+		return nil, fmt.Errorf("failed to enqueue user '%s': %w", entry.UserID, err)
 	}
 
-	// Publish to native language channel so others practicing that language can see them
 	err = ms.pubSubManager.PublishToLanguageChannel(ctx, entry.NativeLanguage, entryJSON)
 	if err != nil {
-		return entry, err
+		return nil, err
 	}
 
-	return entry, nil
+	return &entry, nil
 }
 
 func (ms *MatchmakingService) CancelMatchmaking(ctx context.Context, userID string) error {
+	err := ms.dequeueUserByID(ctx, userID)
+	if err != nil {
+		return err
+	}
 	return nil
 }
 
 func (ms *MatchmakingService) enqueueUser(ctx context.Context, entry QueueEntry, value []byte) error {
 	queueKey := "queue:" + entry.PracticeLanguage
 	pipe := ms.redisClient.Pipeline()
-	pipe.HSet(ctx, usersDataHashKey, entry.UserID, value) // Store data in the hash.
-	pipe.RPush(ctx, queueKey, entry.UserID)               // Store ID in the list (queue).
+	pipe.HSet(ctx, usersDataHashKey, entry.UserID, value)
+	pipe.RPush(ctx, queueKey, entry.UserID)
 	_, err := pipe.Exec(ctx)
 	return err
 }
 
-func (ms *MatchmakingService) dequeueUser(ctx context.Context, entry QueueEntry) error {
-	queueKey := "queue:" + entry.PracticeLanguage
+func (ms *MatchmakingService) dequeueUserByID(ctx context.Context, userID string) error {
+	val, err := ms.redisClient.HGet(ctx, usersDataHashKey, userID).Result()
+	if err != nil {
+		if err == redis.Nil {
+			return nil
+		}
+		return err
+	}
 
-	// Get all entries in the queue to find the user
-	queueLength, err := ms.redisClient.LLen(ctx, queueKey).Result()
+	var entry QueueEntry
+	if err := json.Unmarshal([]byte(val), &entry); err != nil {
+		return err
+	}
+
+	err = ms.dequeueUserByEntry(ctx, entry)
 	if err != nil {
 		return err
 	}
 
-	// Search through the queue to find the user
-	for i := int64(0); i < queueLength; i++ {
-		entryJSON, err := ms.redisClient.LIndex(ctx, queueKey, i).Result()
-		if err != nil {
-			continue
-		}
-
-		var storedEntry QueueEntry
-		if err := json.Unmarshal([]byte(entryJSON), &entry); err != nil {
-			continue
-		}
-
-		// If we found the user, remove them from the queue
-		if storedEntry.UserID == entry.UserID {
-			return ms.redisClient.LRem(ctx, queueKey, 1, entryJSON).Err()
-		}
-	}
-
-	// User not found in queue - this is not an error
 	return nil
+}
+
+func (ms *MatchmakingService) dequeueUserByEntry(ctx context.Context, entry QueueEntry) error {
+	queueKey := "queue:" + entry.PracticeLanguage
+	pipe := ms.redisClient.Pipeline()
+	pipe.LRem(ctx, queueKey, 0, entry.UserID)
+	pipe.HDel(ctx, usersDataHashKey, entry.UserID)
+	_, err := pipe.Exec(ctx)
+	return err
 }
 
 func (ms *MatchmakingService) InitializeLanguageChannels(ctx context.Context, languages []string) error {
