@@ -66,39 +66,50 @@ func (ms *MatchmakingService) listenToLanguageChannel(ctx context.Context, langu
 	ch := pubsub.Channel()
 	for msg := range ch {
 		var nativeEntry QueueEntry
-		if err := json.Unmarshal([]byte(msg.Payload), &nativeEntry); err != nil {
+		err := json.Unmarshal([]byte(msg.Payload), &nativeEntry)
+		if err != nil {
 			log.Printf("Error unmarshaling message: %v", err)
 			continue
-		} // TODO - maybe remove from the channel?
+		}
 
 		log.Printf("New user in %s channel: %s (native: %s, practice: %s)", language, nativeEntry.UserID, nativeEntry.NativeLanguage, nativeEntry.PracticeLanguage)
 
-		match, err := ms.findMatch(ctx, nativeEntry)
+		err = ms.processMessage(ctx, nativeEntry)
 		if err != nil {
-			log.Printf("Error finding match: %v", err)
+			log.Printf("Error processing message: %v", err)
 			continue
 		}
+	}
+}
 
-		if match != nil {
-			log.Printf("Match found! %s <-> %s", match.PracticeUser.UserID, match.NativeUser.UserID)
+func (ms *MatchmakingService) processMessage(ctx context.Context, nativeEntry QueueEntry) error {
+	match, err := ms.findMatch(ctx, nativeEntry)
+	if err != nil {
+		log.Printf("Error finding match: %v", err)
+		return nil
+	}
 
-			// First create the session to ensure it's valid before removing users
-			if err := ms.notifyMatch(ctx, match); err != nil {
-				log.Printf("Error creating session/notifying match: %v", err)
-				// If session creation fails, try to restore the practice user to queue
-				if restoreErr := ms.restorePracticeUserToQueue(ctx, match.PracticeUser); restoreErr != nil {
-					log.Printf("Failed to restore practice user to queue: %v", restoreErr)
-				}
-				continue
+	if match != nil {
+		log.Printf("Match found! %s <-> %s", match.PracticeUser.UserID, match.NativeUser.UserID)
+
+		// First create the session to ensure it's valid before removing users
+		if err := ms.notifyMatch(ctx, match); err != nil {
+			log.Printf("Error creating session/notifying match: %v", err)
+			// If session creation fails, try to restore the practice user to queue
+			if restoreErr := ms.restorePracticeUserToQueue(ctx, match.PracticeUser); restoreErr != nil {
+				log.Printf("Failed to restore practice user to queue: %v", restoreErr)
 			}
+			return nil
+		}
 
-			// Only after successful session creation, remove both users from all queues
-			if err := ms.removeMatchedUsers(ctx, match); err != nil {
-				log.Printf("Warning: Error removing matched users (session already created): %v", err)
-				// Don't fail here since the session is already created and users notified
-			}
+		// Only after successful session creation, remove both users from all queues
+		if err := ms.removeMatchedUsers(ctx, match); err != nil {
+			log.Printf("Warning: Error removing matched users (session already created): %v", err)
+			// Don't fail here since the session is already created and users notified
 		}
 	}
+
+	return nil
 }
 
 func (ms *MatchmakingService) findMatch(ctx context.Context, nativeEntry QueueEntry) (*Match, error) {
