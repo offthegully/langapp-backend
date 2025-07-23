@@ -9,6 +9,14 @@ import (
 	"github.com/gorilla/websocket"
 )
 
+type MessageType string
+
+const (
+	MatchFound           MessageType = "match_found"           // Users matched, not yet connected
+	MatchmakingCancelled MessageType = "matchmaking_cancelled" // Matchmaking was cancelled due to timeout or other issue
+	StillSearching       MessageType = "still_searching"       // Heartbeat notification that matchmaking still ongoing
+)
+
 type Manager struct {
 	clients    map[string]*Client
 	register   chan *Client
@@ -24,14 +32,8 @@ type Client struct {
 }
 
 type Message struct {
-	Type string      `json:"type"`
+	Type MessageType `json:"type"`
 	Data interface{} `json:"data"`
-}
-
-type MatchNotification struct {
-	PartnerID string `json:"partner_id"`
-	Language  string `json:"language"`
-	Message   string `json:"message"`
 }
 
 var upgrader = websocket.Upgrader{
@@ -93,15 +95,6 @@ func (m *Manager) HandleWebSocket(w http.ResponseWriter, r *http.Request) {
 
 	go client.writePump()
 	go client.readPump()
-}
-
-func (m *Manager) NotifyMatch(userID string, notification MatchNotification) error {
-	message := Message{
-		Type: "match_found",
-		Data: notification,
-	}
-
-	return m.SendMessage(userID, message)
 }
 
 func (m *Manager) SendMessage(userID string, message Message) error {

@@ -34,6 +34,12 @@ type Match struct {
 	CreatedAt    time.Time  `json:"created_at"`
 }
 
+type MatchNotification struct {
+	PartnerID string `json:"partner_id"`
+	Language  string `json:"language"`
+	Message   string `json:"message"`
+}
+
 func NewMatchingService(redisClient RedisClient, pubSubManager PubSubManager, wsManager *websocket.Manager, sessionRepository SessionRepository, languages []string) *MatchingService {
 	return &MatchingService{
 		redisClient:       redisClient,
@@ -257,25 +263,30 @@ func (s *MatchingService) notifyMatch(match *Match) error {
 
 	log.Printf("Created session %s for match - Language: %s", session.ID.String(), match.Language)
 
-	// User1 is the learner, User2 is the native speaker
-	learnerNotification := websocket.MatchNotification{
-		PartnerID: match.NativeUser.UserID,
-		Language:  match.Language,
-		Message:   fmt.Sprintf("Match found! You'll practice %s with %s", match.Language, match.NativeUser.UserID),
+	practiceUserMessage := websocket.Message{
+		Type: websocket.MatchFound,
+		Data: MatchNotification{
+			PartnerID: match.NativeUser.UserID,
+			Language:  match.Language,
+			Message:   fmt.Sprintf("Match found! You'll practice %s with %s", match.Language, match.NativeUser.UserID),
+		},
 	}
 
-	nativeNotification := websocket.MatchNotification{
-		PartnerID: match.PracticeUser.UserID,
-		Language:  match.Language,
-		Message:   fmt.Sprintf("Match found! You'll help %s practice %s", match.PracticeUser.UserID, match.Language),
+	nativeUserMessage := websocket.Message{
+		Type: websocket.MatchFound,
+		Data: MatchNotification{
+			PartnerID: match.PracticeUser.UserID,
+			Language:  match.Language,
+			Message:   fmt.Sprintf("Match found! You'll help %s practice %s", match.PracticeUser.UserID, match.Language),
+		},
 	}
 
-	if err := s.wsManager.NotifyMatch(match.PracticeUser.UserID, learnerNotification); err != nil {
-		log.Printf("Failed to notify learner %s: %v", match.PracticeUser.UserID, err)
+	if err := s.wsManager.SendMessage(match.PracticeUser.UserID, practiceUserMessage); err != nil {
+		log.Printf("Failed to notify practice user %s: %v", match.PracticeUser.UserID, err)
 	}
 
-	if err := s.wsManager.NotifyMatch(match.NativeUser.UserID, nativeNotification); err != nil {
-		log.Printf("Failed to notify native speaker %s: %v", match.NativeUser.UserID, err)
+	if err := s.wsManager.SendMessage(match.NativeUser.UserID, nativeUserMessage); err != nil {
+		log.Printf("Failed to notify native user %s: %v", match.NativeUser.UserID, err)
 	}
 
 	return nil
