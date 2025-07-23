@@ -12,7 +12,7 @@ type LanguagesResponse struct {
 }
 
 func (api *APIService) GetLanguagesHandler(w http.ResponseWriter, r *http.Request) {
-	languages, err := api.languagesService.GetSupportedLanguages()
+	languages, err := api.languagesRepository.GetAllLanguages(r.Context())
 	if err != nil {
 		http.Error(w, "Failed to get supported languages", http.StatusInternalServerError)
 		return
