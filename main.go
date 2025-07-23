@@ -31,14 +31,13 @@ func main() {
 	sessionRepository := session.NewRepository(postgresClient)
 
 	languagesRepository := languages.NewRepository(postgresClient)
-	languagesService := languages.NewService(languagesRepository)
-	supportedLanguages, err := languagesService.GetSupportedLanguages()
+	languages, err := languagesRepository.GetAllLanguages(ctx)
 	if err != nil {
 		log.Fatalf("Failed to get supported languages: %v", err)
 	}
 
-	languageNames := make([]string, len(supportedLanguages))
-	for i, lang := range supportedLanguages {
+	languageNames := make([]string, len(languages))
+	for i, lang := range languages {
 		languageNames[i] = lang.Name
 	}
 
@@ -55,7 +54,7 @@ func main() {
 	}
 	go matchmakingService.Start(ctx)
 
-	apiService := api.NewAPIService(matchmakingService, languagesService, wsManager)
+	apiService := api.NewAPIService(matchmakingService, languagesRepository, wsManager)
 	r := api.NewRouter(apiService)
 
 	log.Printf("Server starting on :8080 with %d language channels initialized", len(languageNames))

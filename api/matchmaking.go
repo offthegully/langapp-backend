@@ -1,6 +1,7 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -36,7 +37,7 @@ func (api *APIService) StartMatchmaking(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	ok, msg := api.validateStartMatchmakingRequest(req)
+	ok, msg := api.validateStartMatchmakingRequest(r.Context(), req)
 	if !ok {
 		http.Error(w, msg, http.StatusBadRequest)
 		return
@@ -63,6 +64,34 @@ func (api *APIService) StartMatchmaking(w http.ResponseWriter, r *http.Request) 
 	json.NewEncoder(w).Encode(response)
 }
 
+func (api *APIService) validateStartMatchmakingRequest(ctx context.Context, req StartMatchmakingRequest) (bool, string) {
+	if req.UserID == "" || req.NativeLanguage == "" || req.PracticeLanguage == "" {
+		return false, "Missing required fields: user_id, native_language, practice_language"
+	}
+
+	if strings.EqualFold(req.NativeLanguage, req.PracticeLanguage) {
+		return false, "Native language and practice language cannot be the same"
+	}
+
+	nativeLanguage, err := api.languagesRepository.GetLanguageByName(ctx, req.NativeLanguage)
+	if err != nil {
+		return false, "Error validating native language"
+	}
+	if nativeLanguage == nil {
+		return false, "Invalid native language"
+	}
+
+	practiceLanguage, err := api.languagesRepository.GetLanguageByName(ctx, req.PracticeLanguage)
+	if err != nil {
+		return false, "Error validating practice language"
+	}
+	if practiceLanguage == nil {
+		return false, "Invalid practice language"
+	}
+
+	return true, ""
+}
+
 func (api *APIService) CancelMatchmaking(w http.ResponseWriter, r *http.Request) {
 	var req CancelMatchmakingRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
@@ -70,7 +99,7 @@ func (api *APIService) CancelMatchmaking(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ok, msg := api.validateCancelMatchmakingRequest(req)
+	ok, msg := api.validateCancelMatchmakingRequest(r.Context(), req)
 	if !ok {
 		http.Error(w, msg, http.StatusBadRequest)
 		return
@@ -90,44 +119,16 @@ func (api *APIService) CancelMatchmaking(w http.ResponseWriter, r *http.Request)
 	json.NewEncoder(w).Encode(response)
 }
 
-func (api *APIService) validateCancelMatchmakingRequest(req CancelMatchmakingRequest) (bool, string) {
+func (api *APIService) validateCancelMatchmakingRequest(ctx context.Context, req CancelMatchmakingRequest) (bool, string) {
 	if req.UserID == "" || req.PracticeLanguage == "" {
 		return false, "Missing required fields: user_id, practice_language"
 	}
 
-	valid, err := api.languagesService.IsValidLanguage(req.PracticeLanguage)
+	language, err := api.languagesRepository.GetLanguageByName(ctx, req.PracticeLanguage)
 	if err != nil {
 		return false, "Error validating practice language"
 	}
-	if !valid {
-		return false, "Invalid practice language"
-	}
-
-	return true, ""
-}
-
-func (api *APIService) validateStartMatchmakingRequest(req StartMatchmakingRequest) (bool, string) {
-	if req.UserID == "" || req.NativeLanguage == "" || req.PracticeLanguage == "" {
-		return false, "Missing required fields: user_id, native_language, practice_language"
-	}
-
-	if strings.EqualFold(req.NativeLanguage, req.PracticeLanguage) {
-		return false, "Native language and practice language cannot be the same"
-	}
-
-	valid, err := api.languagesService.IsValidLanguage(req.NativeLanguage)
-	if err != nil {
-		return false, "Error validating native language"
-	}
-	if !valid {
-		return false, "Invalid native language"
-	}
-
-	valid, err = api.languagesService.IsValidLanguage(req.PracticeLanguage)
-	if err != nil {
-		return false, "Error validating practice language"
-	}
-	if !valid {
+	if language == nil {
 		return false, "Invalid practice language"
 	}
 

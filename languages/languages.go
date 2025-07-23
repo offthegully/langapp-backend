@@ -28,16 +28,6 @@ func NewRepository(db *postgres.PostgresClient) *Repository {
 	}
 }
 
-type Service struct {
-	repo *Repository
-}
-
-func NewService(repo *Repository) *Service {
-	return &Service{
-		repo: repo,
-	}
-}
-
 func (r *Repository) GetAllLanguages(ctx context.Context) ([]Language, error) {
 	query := `
 		SELECT id, name, short_name, is_active, created_at, updated_at
@@ -96,27 +86,4 @@ func (r *Repository) GetLanguageByName(ctx context.Context, name string) (*Langu
 	}
 
 	return &lang, nil
-}
-
-func (r *Repository) IsValidLanguage(ctx context.Context, language string) (bool, error) {
-	lang, err := r.GetLanguageByName(ctx, language)
-	if err != nil {
-		return false, err
-	}
-	return lang != nil, nil
-}
-
-func (s *Service) GetSupportedLanguages() ([]Language, error) {
-	ctx := context.Background()
-	return s.repo.GetAllLanguages(ctx)
-}
-
-func (s *Service) IsValidLanguage(language string) (bool, error) {
-	ctx := context.Background()
-	return s.repo.IsValidLanguage(ctx, language)
-}
-
-func (s *Service) GetLanguageByName(language string) (*Language, error) {
-	ctx := context.Background()
-	return s.repo.GetLanguageByName(ctx, language)
 }
