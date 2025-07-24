@@ -79,14 +79,16 @@ func (ms *MatchmakingService) processMessage(ctx context.Context, nativeEntry Qu
 	if err != nil {
 		log.Printf("Error finding match: %v", err)
 		return fmt.Errorf("error finding match: %v", err)
-	}
+	} // TODO - put users on hold once match is found
 
 	if practiceEntry != nil {
 		log.Printf("Match found! %s <-> %s practicing %s", nativeEntry.UserID, practiceEntry.UserID, nativeEntry.NativeLanguage)
 		err = ms.initializeSession(ctx, nativeEntry, *practiceEntry)
 		if err != nil {
+			// TODO - re-enter users in queue and pubsub
 			return fmt.Errorf("error initializing session after finding match: %v", err)
 		}
+		// TODO - remove users from queue and such
 	}
 
 	log.Printf("Match not found for user %s", nativeEntry.UserID)
