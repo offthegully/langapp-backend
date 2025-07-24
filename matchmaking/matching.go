@@ -92,20 +92,19 @@ func (ms *MatchmakingService) processMessage(ctx context.Context, nativeEntry Qu
 	if match != nil {
 		log.Printf("Match found! %s <-> %s", match.PracticeUser.UserID, match.NativeUser.UserID)
 
-		// First create the session to ensure it's valid before removing users
-		if err := ms.notifyMatch(ctx, match); err != nil {
+		err := ms.notifyMatch(ctx, match)
+		if err != nil {
 			log.Printf("Error creating session/notifying match: %v", err)
-			// If session creation fails, try to restore the practice user to queue
+
 			if restoreErr := ms.restorePracticeUserToQueue(ctx, match.PracticeUser); restoreErr != nil {
 				log.Printf("Failed to restore practice user to queue: %v", restoreErr)
 			}
 			return nil
 		}
 
-		// Only after successful session creation, remove both users from all queues
-		if err := ms.removeMatchedUsers(ctx, match); err != nil {
+		err = ms.removeMatchedUsers(ctx, match)
+		if err != nil {
 			log.Printf("Warning: Error removing matched users (session already created): %v", err)
-			// Don't fail here since the session is already created and users notified
 		}
 	}
 
@@ -116,30 +115,23 @@ func (ms *MatchmakingService) findMatch(ctx context.Context, nativeEntry QueueEn
 	language := nativeEntry.NativeLanguage
 	queueKey := "queue:" + language
 
-	// 1. Pop the next user ID from the left of the list (FIFO).
 	userID, err := ms.redisClient.LPop(ctx, queueKey).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			// This is an expected error when the queue is empty.
 			return nil, err
 		}
 		return nil, fmt.Errorf("failed to pop from queue '%s': %w", queueKey, err)
 	}
 
-	// 2. Get the user's data from the hash.
 	entryJSON, err := ms.redisClient.HGet(ctx, usersDataHashKey, userID).Result()
 	if err != nil {
-		// If data is missing for some reason, return an error.
 		return nil, fmt.Errorf("could not find data for user '%s': %w", userID, err)
 	}
 
-	// 3. Clean up the user's data from the hash.
 	if err := ms.redisClient.HDel(ctx, usersDataHashKey, userID).Err(); err != nil {
 		log.Printf("Warning: failed to clean up user data for '%s': %v", userID, err)
-		// Continue anyway since we have the data we need
 	}
 
-	// Unmarshal the data and return it.
 	var practiceEntry QueueEntry
 	if err := json.Unmarshal([]byte(entryJSON), &practiceEntry); err != nil {
 		return nil, fmt.Errorf("failed to unmarshal data for user '%s': %w", userID, err)
@@ -155,48 +147,19 @@ func (ms *MatchmakingService) findMatch(ctx context.Context, nativeEntry QueueEn
 	return match, nil
 }
 
-func (ms *MatchmakingService) Remove(ctx context.Context, language, userID string) error {
-	queueKey := "queue:" + language
-
-	// Use a pipeline for efficiency.
-	pipe := ms.redisClient.Pipeline()
-	// Command to remove the user ID from the queue list.
-	lremResult := pipe.LRem(ctx, queueKey, 1, userID)
-	// Command to delete the user data from the hash.
-	pipe.HDel(ctx, usersDataHashKey, userID)
-	_, err := pipe.Exec(ctx)
-
-	if err != nil {
-		return fmt.Errorf("failed to execute removal for user '%s': %w", userID, err)
-	}
-
-	// Check if the user was actually found and removed from the list.
-	if lremResult.Val() == 0 {
-		return fmt.Errorf("user '%s' not found in queue '%s'", userID, language)
-	}
-
-	log.Printf("Removed user '%s' from language '%s'", userID, language)
-	return nil
-}
-
-// removeMatchedUsers removes both users from all possible queues and cleans up their data
 func (ms *MatchmakingService) removeMatchedUsers(ctx context.Context, match *Match) error {
 	var errors []error
 
-	// Remove the native user from their queue (they were listening on pubsub)
-	// The native user would be in the queue for their practice language
-	if err := ms.removeUserFromAllQueues(ctx, match.NativeUser); err != nil {
+	err := ms.removeUserFromAllQueues(ctx, match.NativeUser)
+	if err != nil {
 		errors = append(errors, fmt.Errorf("failed to remove native user %s: %w", match.NativeUser.UserID, err))
 	}
 
-	// The practice user was already popped from their queue in findMatch,
-	// but we should ensure they're cleaned up from the hash and any other queues
 	if err := ms.removeUserFromAllQueues(ctx, match.PracticeUser); err != nil {
 		errors = append(errors, fmt.Errorf("failed to remove practice user %s: %w", match.PracticeUser.UserID, err))
 	}
 
 	if len(errors) > 0 {
-		// Log all errors but return the first one
 		for _, err := range errors {
 			log.Printf("User removal error: %v", err)
 		}
@@ -207,21 +170,14 @@ func (ms *MatchmakingService) removeMatchedUsers(ctx context.Context, match *Mat
 	return nil
 }
 
-// removeUserFromAllQueues removes a user from all possible language queues and hash data
 func (ms *MatchmakingService) removeUserFromAllQueues(ctx context.Context, user QueueEntry) error {
 	pipe := ms.redisClient.Pipeline()
-
-	// Remove from all possible language queues
-	// A user could potentially be in multiple queues if they were added multiple times
 	for _, language := range ms.languages {
 		queueKey := "queue:" + language
 		pipe.LRem(ctx, queueKey, 0, user.UserID) // 0 means remove all occurrences
 	}
 
-	// Remove user data from hash
 	pipe.HDel(ctx, usersDataHashKey, user.UserID)
-
-	// Execute all commands
 	_, err := pipe.Exec(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to remove user %s from all queues: %w", user.UserID, err)
@@ -231,31 +187,22 @@ func (ms *MatchmakingService) removeUserFromAllQueues(ctx context.Context, user 
 	return nil
 }
 
-// restorePracticeUserToQueue restores a practice user back to their queue if session creation fails
-func (ms *MatchmakingService) restorePracticeUserToQueue(ctx context.Context, user QueueEntry) error {
-	// Re-marshal the user data
-	entryJSON, err := json.Marshal(user)
+func (ms *MatchmakingService) restorePracticeUserToQueue(ctx context.Context, entry QueueEntry) error {
+	entryJSON, err := json.Marshal(entry)
 	if err != nil {
 		return fmt.Errorf("failed to marshal user data for restore: %w", err)
 	}
 
-	// Use pipeline to restore both hash data and queue position
 	pipe := ms.redisClient.Pipeline()
-
-	// Restore user data to hash
-	pipe.HSet(ctx, usersDataHashKey, user.UserID, entryJSON)
-
-	// Add user back to the front of their practice language queue (since they were already waiting)
-	queueKey := "queue:" + user.PracticeLanguage
-	pipe.LPush(ctx, queueKey, user.UserID)
-
-	// Execute the pipeline
+	pipe.HSet(ctx, usersDataHashKey, entry.UserID, entryJSON)
+	queueKey := "queue:" + entry.PracticeLanguage
+	pipe.LPush(ctx, queueKey, entry.UserID)
 	_, err = pipe.Exec(ctx)
 	if err != nil {
-		return fmt.Errorf("failed to restore user %s to queue: %w", user.UserID, err)
+		return fmt.Errorf("failed to restore user %s to queue: %w", entry.UserID, err)
 	}
 
-	log.Printf("Restored user %s to queue %s", user.UserID, queueKey)
+	log.Printf("Restored user %s to queue %s", entry.UserID, queueKey)
 	return nil
 }
 
