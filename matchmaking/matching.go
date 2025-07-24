@@ -193,22 +193,15 @@ func (ms *MatchmakingService) restorePracticeUserToQueue(ctx context.Context, en
 		return fmt.Errorf("failed to marshal user data for restore: %w", err)
 	}
 
-	pipe := ms.redisClient.Pipeline()
-	pipe.HSet(ctx, usersDataHashKey, entry.UserID, entryJSON)
-	queueKey := "queue:" + entry.PracticeLanguage
-	pipe.LPush(ctx, queueKey, entry.UserID)
-	_, err = pipe.Exec(ctx)
-	if err != nil {
-		return fmt.Errorf("failed to restore user %s to queue: %w", entry.UserID, err)
-	}
+	ms.enqueueUser(ctx, entry, entryJSON)
 
-	log.Printf("Restored user %s to queue %s", entry.UserID, queueKey)
+	log.Printf("Restored user %s to queue %s", entry.UserID, entry.PracticeLanguage)
 	return nil
 }
 
 func (ms *MatchmakingService) notifyMatch(ctx context.Context, match *Match) error {
-	// Create session in database
-	session, err := ms.sessionRepository.CreateSession(ctx,
+	session, err := ms.sessionRepository.CreateSession(
+		ctx,
 		match.PracticeUser.UserID,
 		match.NativeUser.UserID,
 		match.Language,
