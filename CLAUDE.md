@@ -33,15 +33,18 @@ The matching algorithm pairs users where:
   - `queue.go` - MatchmakingService and QueueEntry structs with Redis interface
   - `matching.go` - MatchingService for real-time match discovery and WebSocket notifications
 - `storage/` - Data layer
-  - `postgres.go` - PostgreSQL client with connection pooling and migrations
-  - `redis.go` - Redis client configuration and factory
-  - `migrations/` - Database migration files (embedded)
+  - `postgres/` - PostgreSQL client and migrations
+    - `postgres.go` - PostgreSQL client with connection pooling and migrations
+    - `migrations/` - Database migration files (embedded)
+  - `redis/` - Redis client and pub/sub functionality
+    - `client.go` - Redis client configuration and factory
+    - `pubsub.go` - Redis pub/sub operations for matchmaking
 - `session/` - Session management
   - `session.go` - Session repository with CRUD operations and status tracking
 - `languages/` - Language validation and constants
   - `languages.go` - Supported languages list and validation functions
 - `signaling/` - WebRTC signaling service for audio call coordination
-  - `service.go` - WebRTC signaling service implementation
+  - `signaling.go` - WebRTC signaling service implementation
 - `websocket/` - WebSocket connection management
   - `manager.go` - WebSocket client management and real-time messaging
 - `docker-compose.yml` - Redis and PostgreSQL containers for local development

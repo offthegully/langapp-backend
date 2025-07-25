@@ -79,16 +79,24 @@ func (ms *MatchmakingService) processMessage(ctx context.Context, nativeEntry Qu
 	if err != nil {
 		log.Printf("Error finding match: %v", err)
 		return fmt.Errorf("error finding match: %v", err)
-	} // TODO - put users on hold once match is found
+	}
 
 	if practiceEntry != nil {
 		log.Printf("Match found! %s <-> %s practicing %s", nativeEntry.UserID, practiceEntry.UserID, nativeEntry.NativeLanguage)
 		err = ms.initializeSession(ctx, nativeEntry, *practiceEntry)
 		if err != nil {
-			// TODO - re-enter users in queue and pubsub
+			// TODO - maybe we just remove the user from matchmaking here, will have to decide
+			// Restore the practice user back to the queue since session creation failed
+			if restoreErr := ms.restoreUserFromHold(ctx, practiceEntry.UserID, nativeEntry.NativeLanguage); restoreErr != nil {
+				log.Printf("Failed to restore user %s from hold after session creation failure: %v", practiceEntry.UserID, restoreErr)
+			}
 			return fmt.Errorf("error initializing session after finding match: %v", err)
 		}
-		// TODO - remove users from queue and such
+
+		// Session created successfully, release the practice user from hold
+		if releaseErr := ms.releaseUserFromHold(ctx, practiceEntry.UserID, nativeEntry.NativeLanguage); releaseErr != nil {
+			log.Printf("Warning: failed to release user %s from hold after successful match: %v", practiceEntry.UserID, releaseErr)
+		}
 	}
 
 	log.Printf("Match not found for user %s", nativeEntry.UserID)
@@ -143,27 +151,26 @@ func (ms *MatchmakingService) findMatch(ctx context.Context, nativeEntry QueueEn
 	language := nativeEntry.NativeLanguage
 	queueKey := "queue:" + language
 
-	userID, err := ms.redisClient.LPop(ctx, queueKey).Result()
+	// Get the next user from the queue without removing them yet
+	userID, err := ms.redisClient.LIndex(ctx, queueKey, 0).Result()
 	if err != nil {
 		if errors.Is(err, redis.Nil) {
-			return nil, nil
+			log.Printf("No user in '%s' queue on pop", language)
+			return nil, nil // No users in queue
 		}
-		return nil, fmt.Errorf("failed to pop from queue '%s': %w", queueKey, err)
+		return nil, fmt.Errorf("failed to peek queue '%s': %w", queueKey, err)
 	}
 
-	entryJSON, err := ms.redisClient.HGet(ctx, usersDataHashKey, userID).Result()
+	// Put the user on hold (this atomically removes from queue and places in hold)
+	practiceEntry, err := ms.putUserOnHold(ctx, userID, language)
 	if err != nil {
-		return nil, fmt.Errorf("could not find data for user '%s': %w", userID, err)
+		return nil, fmt.Errorf("failed to put user on hold: %w", err)
 	}
 
-	if err := ms.redisClient.HDel(ctx, usersDataHashKey, userID).Err(); err != nil {
-		log.Printf("Warning: failed to clean up user data for '%s': %v", userID, err)
+	if practiceEntry == nil {
+		log.Printf("No user in queue on pop, %s", userID)
+		return nil, nil // No user was available (race condition)
 	}
 
-	var practiceEntry QueueEntry
-	if err := json.Unmarshal([]byte(entryJSON), &practiceEntry); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal data for user '%s': %w", userID, err)
-	}
-
-	return &practiceEntry, nil
+	return practiceEntry, nil
 }
