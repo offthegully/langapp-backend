@@ -12,9 +12,22 @@ import (
 type MessageType string
 
 const (
+	// Outgoing message types (server to client)
 	MatchFound           MessageType = "match_found"           // Users matched, not yet connected
 	MatchmakingCancelled MessageType = "matchmaking_cancelled" // Matchmaking was cancelled due to timeout or other issue
 	StillSearching       MessageType = "still_searching"       // Heartbeat notification that matchmaking still ongoing
+	ConnectionInitiated  MessageType = "connection_initiated"  // WebRTC connection initiation started
+	SignalingMessage     MessageType = "signaling_message"     // WebRTC signaling message (offer/answer/ICE)
+	CallActive           MessageType = "call_active"           // Audio call is now active
+	ConnectionFailed     MessageType = "connection_failed"     // WebRTC connection failed
+	
+	// Incoming message types (client to server)
+	SignalingOffer       MessageType = "signaling_offer"       // WebRTC offer from client
+	SignalingAnswer      MessageType = "signaling_answer"      // WebRTC answer from client
+	SignalingICE         MessageType = "signaling_ice"         // ICE candidate from client
+	InitiateConnection   MessageType = "initiate_connection"   // Client wants to start WebRTC connection
+	ConnectionSuccess    MessageType = "connection_success"    // Client reports successful connection
+	ConnectionFailure    MessageType = "connection_failure"    // Client reports connection failure
 )
 
 type Manager struct {
