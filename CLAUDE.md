@@ -63,6 +63,7 @@ The matching algorithm pairs users where:
 - Test specific package: `go test ./matchmaking`
 - Test with verbose output: `go test -v ./...`
 - Stop services: `docker-compose down`
+- Server runs on: `http://localhost:8080`
 
 ## Testing Guidelines
 - **Manual Testing**: Do NOT run manual tests using the test scripts when making code changes. Only run unit tests with `go test ./...`
@@ -192,3 +193,9 @@ The system uses Redis for real-time matchmaking with the following patterns:
 ### Technical Debt
 - ✅ OpenAPI specification documentation
 - ❌ No formal test coverage exists (only manual test scripts)
+
+## Important Reminder Instructions
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.

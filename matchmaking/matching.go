@@ -85,7 +85,6 @@ func (ms *MatchmakingService) processMessage(ctx context.Context, nativeEntry Qu
 		log.Printf("Match found! %s <-> %s practicing %s", nativeEntry.UserID, practiceEntry.UserID, nativeEntry.NativeLanguage)
 		err = ms.initializeSession(ctx, nativeEntry, *practiceEntry)
 		if err != nil {
-			// TODO - maybe we just remove the user from matchmaking here, will have to decide
 			// Restore the practice user back to the queue since session creation failed
 			if restoreErr := ms.restoreUserFromHold(ctx, practiceEntry.UserID, nativeEntry.NativeLanguage); restoreErr != nil {
 				log.Printf("Failed to restore user %s from hold after session creation failure: %v", practiceEntry.UserID, restoreErr)
