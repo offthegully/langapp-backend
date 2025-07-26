@@ -1,249 +1,428 @@
 package signaling
 
 import (
-	"context"
 	"encoding/json"
-	"fmt"
 	"log"
+	"sync"
+	"time"
 
-	"langapp-backend/session"
 	"langapp-backend/websocket"
 
 	"github.com/google/uuid"
 )
 
-type MessageType string
+// SignalingData represents the data payload for signaling messages
+type SignalingData struct {
+	SDP       string                 `json:"sdp,omitempty"`       // Session Description Protocol
+	Type      string                 `json:"type,omitempty"`      // "offer" or "answer"
+	Candidate map[string]interface{} `json:"candidate,omitempty"` // ICE candidate
+	MatchID   string                 `json:"match_id,omitempty"`  // Match identifier
+	UserID    string                 `json:"user_id,omitempty"`   // User identifier
+}
+
+// Match represents an active match between two users
+type Match struct {
+	ID        string
+	UserA     string
+	UserB     string
+	CreatedAt time.Time
+	Status    MatchStatus
+	mutex     sync.RWMutex
+}
+
+type MatchStatus string
 
 const (
-	Offer         MessageType = "offer"
-	Answer        MessageType = "answer"
-	ICECandidate  MessageType = "ice-candidate"
-	ConnectionError MessageType = "connection-error"
+	MatchStatusWaiting    MatchStatus = "waiting"    // Match created, waiting for connection
+	MatchStatusConnecting MatchStatus = "connecting" // WebRTC signaling in progress
+	MatchStatusActive     MatchStatus = "active"     // Call is active
+	MatchStatusFailed     MatchStatus = "failed"     // Connection failed
+	MatchStatusCompleted  MatchStatus = "completed"  // Call ended successfully
 )
 
-type SignalingMessage struct {
-	Type      MessageType     `json:"type"`
-	SessionID uuid.UUID       `json:"session_id"`
-	FromUser  string          `json:"from_user"`
-	ToUser    string          `json:"to_user"`
-	Data      json.RawMessage `json:"data"`
+// SignalingService handles WebRTC signaling between matched users
+type SignalingService struct {
+	wsManager   *websocket.Manager
+	matches     map[string]*Match
+	userMatches map[string]string // userID -> matchID mapping
+	matchmaking chan MatchRequest
+	mutex       sync.RWMutex
+	stopChan    chan struct{}
 }
 
-type OfferData struct {
-	SDP string `json:"sdp"`
+type MatchRequest struct {
+	UserID string
 }
 
-type AnswerData struct {
-	SDP string `json:"sdp"`
-}
-
-type ICECandidateData struct {
-	Candidate     string `json:"candidate"`
-	SDPMLineIndex int    `json:"sdpMLineIndex"`
-	SDPMid        string `json:"sdpMid"`
-}
-
-type ConnectionErrorData struct {
-	Error   string `json:"error"`
-	Message string `json:"message"`
-}
-
-type SessionRepository interface {
-	GetSessionByID(ctx context.Context, sessionID uuid.UUID) (*session.Session, error)
-	GetSessionByUserID(ctx context.Context, userID string) (*session.Session, error)
-	UpdateSession(ctx context.Context, sessionID uuid.UUID, status session.SessionStatus) error
-}
-
-type Service struct {
-	wsManager         *websocket.Manager
-	sessionRepository SessionRepository
-}
-
-func NewService(wsManager *websocket.Manager, sessionRepository SessionRepository) *Service {
-	return &Service{
-		wsManager:         wsManager,
-		sessionRepository: sessionRepository,
+// NewSignalingService creates a new signaling service
+func NewSignalingService(wsManager *websocket.Manager) *SignalingService {
+	return &SignalingService{
+		wsManager:   wsManager,
+		matches:     make(map[string]*Match),
+		userMatches: make(map[string]string),
+		matchmaking: make(chan MatchRequest, 100),
+		stopChan:    make(chan struct{}),
 	}
 }
 
-// ProcessSignalingMessage handles incoming WebRTC signaling messages
-func (s *Service) ProcessSignalingMessage(ctx context.Context, message SignalingMessage) error {
-	// Validate the session exists and user is authorized
-	sess, err := s.validateSessionAndUser(ctx, message.SessionID, message.FromUser)
-	if err != nil {
-		return fmt.Errorf("session validation failed: %w", err)
+// Start begins the signaling service
+func (s *SignalingService) Start() {
+	go s.matchmakingLoop()
+	go s.cleanupLoop()
+}
+
+// Stop gracefully shuts down the signaling service
+func (s *SignalingService) Stop() {
+	close(s.stopChan)
+}
+
+// RequestMatch adds a user to the matchmaking queue
+func (s *SignalingService) RequestMatch(userID string) {
+	s.matchmaking <- MatchRequest{UserID: userID}
+}
+
+// HandleSignalingMessage processes incoming signaling messages from clients
+func (s *SignalingService) HandleSignalingMessage(userID string, msgType websocket.MessageType, data json.RawMessage) error {
+	var sigData SignalingData
+	if err := json.Unmarshal(data, &sigData); err != nil {
+		return err
 	}
 
-	// Update session status based on message type
-	if err := s.updateSessionStatus(ctx, message, sess); err != nil {
-		log.Printf("Warning: failed to update session status: %v", err)
+	s.mutex.RLock()
+	matchID, exists := s.userMatches[userID]
+	s.mutex.RUnlock()
+
+	if !exists {
+		log.Printf("No active match for user %s", userID)
+		return nil
 	}
 
-	// Forward the message to the target user
-	if err := s.forwardMessage(ctx, message); err != nil {
-		return fmt.Errorf("failed to forward signaling message: %w", err)
+	match := s.getMatch(matchID)
+	if match == nil {
+		log.Printf("Match %s not found", matchID)
+		return nil
 	}
 
-	log.Printf("Signaling message %s forwarded from %s to %s for session %s", 
-		message.Type, message.FromUser, message.ToUser, message.SessionID)
+	// Determine the other user in the match
+	var otherUserID string
+	if match.UserA == userID {
+		otherUserID = match.UserB
+	} else {
+		otherUserID = match.UserA
+	}
+
+	switch msgType {
+	case websocket.SignalingOffer:
+		return s.handleOffer(match, userID, otherUserID, sigData)
+	case websocket.SignalingAnswer:
+		return s.handleAnswer(match, userID, otherUserID, sigData)
+	case websocket.SignalingICE:
+		return s.handleICECandidate(match, userID, otherUserID, sigData)
+	case websocket.InitiateConnection:
+		return s.handleInitiateConnection(match, userID, otherUserID)
+	case websocket.ConnectionSuccess:
+		return s.handleConnectionSuccess(match, userID)
+	case websocket.ConnectionFailure:
+		return s.handleConnectionFailure(match, userID)
+	}
 
 	return nil
 }
 
-// InitiateConnection starts the WebRTC negotiation process
-func (s *Service) InitiateConnection(ctx context.Context, sessionID uuid.UUID, userID string) error {
-	sess, err := s.sessionRepository.GetSessionByID(ctx, sessionID)
-	if err != nil {
-		return fmt.Errorf("failed to get session: %w", err)
+// matchmakingLoop handles the matchmaking process
+func (s *SignalingService) matchmakingLoop() {
+	var waitingUser *MatchRequest
+
+	for {
+		select {
+		case <-s.stopChan:
+			return
+		case req := <-s.matchmaking:
+			if waitingUser == nil {
+				// First user, wait for a match
+				waitingUser = &req
+				log.Printf("User %s is waiting for a match", req.UserID)
+
+				// Send "still searching" message
+				s.wsManager.SendMessage(req.UserID, websocket.Message{
+					Type: websocket.StillSearching,
+					Data: SignalingData{},
+				})
+			} else {
+				// Second user, create a match
+				match := s.createMatch(waitingUser.UserID, req.UserID)
+				log.Printf("Match created: %s between users %s and %s", match.ID, waitingUser.UserID, req.UserID)
+
+				// Notify both users that a match was found
+				matchData := SignalingData{
+					MatchID: match.ID,
+				}
+
+				s.wsManager.SendMessage(waitingUser.UserID, websocket.Message{
+					Type: websocket.MatchFound,
+					Data: matchData,
+				})
+
+				s.wsManager.SendMessage(req.UserID, websocket.Message{
+					Type: websocket.MatchFound,
+					Data: matchData,
+				})
+
+				waitingUser = nil
+			}
+		}
+	}
+}
+
+// createMatch creates a new match between two users
+func (s *SignalingService) createMatch(userA, userB string) *Match {
+	match := &Match{
+		ID:        uuid.New().String(),
+		UserA:     userA,
+		UserB:     userB,
+		CreatedAt: time.Now(),
+		Status:    MatchStatusWaiting,
 	}
 
-	// Verify user is part of this session
-	if sess.PracticeUserID != userID && sess.NativeUserID != userID {
-		return fmt.Errorf("user %s is not part of session %s", userID, sessionID)
-	}
+	s.mutex.Lock()
+	s.matches[match.ID] = match
+	s.userMatches[userA] = match.ID
+	s.userMatches[userB] = match.ID
+	s.mutex.Unlock()
 
-	// Update session to connecting status
-	if err := s.sessionRepository.UpdateSession(ctx, sessionID, session.SessionConnecting); err != nil {
-		return fmt.Errorf("failed to update session status: %w", err)
-	}
+	return match
+}
 
-	// Notify both users that connection initiation has started
-	initiationMessage := websocket.Message{
-		Type: websocket.ConnectionInitiated,
-		Data: map[string]interface{}{
-			"session_id": sessionID,
-			"initiator":  userID,
-			"message":    "WebRTC connection initiated",
+// getMatch retrieves a match by ID
+func (s *SignalingService) getMatch(matchID string) *Match {
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
+	return s.matches[matchID]
+}
+
+// handleOffer processes WebRTC offer messages
+func (s *SignalingService) handleOffer(match *Match, fromUser, toUser string, data SignalingData) error {
+	match.mutex.Lock()
+	match.Status = MatchStatusConnecting
+	match.mutex.Unlock()
+
+	log.Printf("Forwarding offer from %s to %s in match %s", fromUser, toUser, match.ID)
+
+	return s.wsManager.SendMessage(toUser, websocket.Message{
+		Type: websocket.SignalingMessage,
+		Data: SignalingData{
+			SDP:     data.SDP,
+			Type:    "offer",
+			MatchID: match.ID,
+			UserID:  fromUser,
 		},
-	}
-
-	// Send to both users
-	if err := s.wsManager.SendMessage(sess.PracticeUserID, initiationMessage); err != nil {
-		log.Printf("Failed to notify practice user %s of connection initiation: %v", sess.PracticeUserID, err)
-	}
-	if err := s.wsManager.SendMessage(sess.NativeUserID, initiationMessage); err != nil {
-		log.Printf("Failed to notify native user %s of connection initiation: %v", sess.NativeUserID, err)
-	}
-
-	log.Printf("Connection initiated for session %s by user %s", sessionID, userID)
-	return nil
+	})
 }
 
-// HandleConnectionSuccess marks a session as active
-func (s *Service) HandleConnectionSuccess(ctx context.Context, sessionID uuid.UUID, userID string) error {
-	sess, err := s.validateSessionAndUser(ctx, sessionID, userID)
-	if err != nil {
-		return fmt.Errorf("session validation failed: %w", err)
-	}
+// handleAnswer processes WebRTC answer messages
+func (s *SignalingService) handleAnswer(match *Match, fromUser, toUser string, data SignalingData) error {
+	log.Printf("Forwarding answer from %s to %s in match %s", fromUser, toUser, match.ID)
 
-	// Update session to active status
-	if err := s.sessionRepository.UpdateSession(ctx, sessionID, session.SessionActive); err != nil {
-		return fmt.Errorf("failed to update session status: %w", err)
-	}
+	return s.wsManager.SendMessage(toUser, websocket.Message{
+		Type: websocket.SignalingMessage,
+		Data: SignalingData{
+			SDP:     data.SDP,
+			Type:    "answer",
+			MatchID: match.ID,
+			UserID:  fromUser,
+		},
+	})
+}
+
+// handleICECandidate processes ICE candidate messages
+func (s *SignalingService) handleICECandidate(match *Match, fromUser, toUser string, data SignalingData) error {
+	log.Printf("Forwarding ICE candidate from %s to %s in match %s", fromUser, toUser, match.ID)
+
+	return s.wsManager.SendMessage(toUser, websocket.Message{
+		Type: websocket.SignalingMessage,
+		Data: SignalingData{
+			Candidate: data.Candidate,
+			MatchID:   match.ID,
+			UserID:    fromUser,
+		},
+	})
+}
+
+// handleInitiateConnection processes connection initiation requests
+func (s *SignalingService) handleInitiateConnection(match *Match, fromUser, toUser string) error {
+	log.Printf("User %s initiating connection in match %s", fromUser, match.ID)
+
+	return s.wsManager.SendMessage(toUser, websocket.Message{
+		Type: websocket.ConnectionInitiated,
+		Data: SignalingData{
+			MatchID: match.ID,
+			UserID:  fromUser,
+		},
+	})
+}
+
+// handleConnectionSuccess processes successful connection notifications
+func (s *SignalingService) handleConnectionSuccess(match *Match, userID string) error {
+	match.mutex.Lock()
+	match.Status = MatchStatusActive
+	match.mutex.Unlock()
+
+	log.Printf("Connection success reported by user %s in match %s", userID, match.ID)
 
 	// Notify both users that the call is now active
-	activeMessage := websocket.Message{
+	var otherUserID string
+	if match.UserA == userID {
+		otherUserID = match.UserB
+	} else {
+		otherUserID = match.UserA
+	}
+
+	callActiveData := SignalingData{
+		MatchID: match.ID,
+	}
+
+	s.wsManager.SendMessage(userID, websocket.Message{
 		Type: websocket.CallActive,
-		Data: map[string]interface{}{
-			"session_id": sessionID,
-			"message":    "Audio call is now active",
-			"language":   sess.Language,
-		},
-	}
+		Data: callActiveData,
+	})
 
-	if err := s.wsManager.SendMessage(sess.PracticeUserID, activeMessage); err != nil {
-		log.Printf("Failed to notify practice user %s of active call: %v", sess.PracticeUserID, err)
-	}
-	if err := s.wsManager.SendMessage(sess.NativeUserID, activeMessage); err != nil {
-		log.Printf("Failed to notify native user %s of active call: %v", sess.NativeUserID, err)
-	}
-
-	log.Printf("Session %s is now active", sessionID)
-	return nil
+	return s.wsManager.SendMessage(otherUserID, websocket.Message{
+		Type: websocket.CallActive,
+		Data: callActiveData,
+	})
 }
 
-// HandleConnectionFailure marks a session as failed
-func (s *Service) HandleConnectionFailure(ctx context.Context, sessionID uuid.UUID, userID string, errorMsg string) error {
-	sess, err := s.validateSessionAndUser(ctx, sessionID, userID)
-	if err != nil {
-		return fmt.Errorf("session validation failed: %w", err)
+// handleConnectionFailure processes connection failure notifications
+func (s *SignalingService) handleConnectionFailure(match *Match, userID string) error {
+	match.mutex.Lock()
+	match.Status = MatchStatusFailed
+	match.mutex.Unlock()
+
+	log.Printf("Connection failure reported by user %s in match %s", userID, match.ID)
+
+	// Notify both users that the connection failed
+	var otherUserID string
+	if match.UserA == userID {
+		otherUserID = match.UserB
+	} else {
+		otherUserID = match.UserA
 	}
 
-	// Update session to failed status
-	if err := s.sessionRepository.UpdateSession(ctx, sessionID, session.SessionFailed); err != nil {
-		return fmt.Errorf("failed to update session status: %w", err)
+	failureData := SignalingData{
+		MatchID: match.ID,
 	}
 
-	// Notify both users of the connection failure
-	failureMessage := websocket.Message{
+	s.wsManager.SendMessage(userID, websocket.Message{
 		Type: websocket.ConnectionFailed,
-		Data: map[string]interface{}{
-			"session_id": sessionID,
-			"error":      errorMsg,
-			"message":    "Connection failed - you may try to reconnect",
-		},
-	}
+		Data: failureData,
+	})
 
-	if err := s.wsManager.SendMessage(sess.PracticeUserID, failureMessage); err != nil {
-		log.Printf("Failed to notify practice user %s of connection failure: %v", sess.PracticeUserID, err)
-	}
-	if err := s.wsManager.SendMessage(sess.NativeUserID, failureMessage); err != nil {
-		log.Printf("Failed to notify native user %s of connection failure: %v", sess.NativeUserID, err)
-	}
+	s.wsManager.SendMessage(otherUserID, websocket.Message{
+		Type: websocket.ConnectionFailed,
+		Data: failureData,
+	})
 
-	log.Printf("Session %s marked as failed: %s", sessionID, errorMsg)
+	// Clean up the match
+	s.cleanupMatch(match.ID)
 	return nil
 }
 
-// validateSessionAndUser checks if session exists and user is authorized
-func (s *Service) validateSessionAndUser(ctx context.Context, sessionID uuid.UUID, userID string) (*session.Session, error) {
-	sess, err := s.sessionRepository.GetSessionByID(ctx, sessionID)
-	if err != nil {
-		return nil, fmt.Errorf("session not found: %w", err)
+// cleanupMatch removes a match and its associated user mappings
+func (s *SignalingService) cleanupMatch(matchID string) {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	match, exists := s.matches[matchID]
+	if !exists {
+		return
 	}
 
-	if sess.PracticeUserID != userID && sess.NativeUserID != userID {
-		return nil, fmt.Errorf("user %s is not part of session %s", userID, sessionID)
-	}
+	delete(s.userMatches, match.UserA)
+	delete(s.userMatches, match.UserB)
+	delete(s.matches, matchID)
 
-	return sess, nil
+	log.Printf("Match %s cleaned up", matchID)
 }
 
-// updateSessionStatus updates session status based on signaling message type
-func (s *Service) updateSessionStatus(ctx context.Context, message SignalingMessage, sess *session.Session) error {
-	var newStatus session.SessionStatus
+// cleanupLoop periodically cleans up old matches
+func (s *SignalingService) cleanupLoop() {
+	ticker := time.NewTicker(5 * time.Minute)
+	defer ticker.Stop()
 
-	switch message.Type {
-	case Offer:
-		// First offer means we're starting to connect
-		newStatus = session.SessionConnecting
-	case Answer:
-		// Answer received, still connecting
-		newStatus = session.SessionConnecting
-	case ICECandidate:
-		// ICE candidates being exchanged, keep as connecting
-		return nil // No status change needed
-	case ConnectionError:
-		// Connection error, mark as failed
-		newStatus = session.SessionFailed
-	default:
-		return nil // Unknown message type, no status change
+	for {
+		select {
+		case <-s.stopChan:
+			return
+		case <-ticker.C:
+			s.cleanupOldMatches()
+		}
 	}
-
-	// Only update if status actually changed
-	if sess.Status != newStatus {
-		return s.sessionRepository.UpdateSession(ctx, message.SessionID, newStatus)
-	}
-
-	return nil
 }
 
-// forwardMessage sends the signaling message to the target user
-func (s *Service) forwardMessage(ctx context.Context, message SignalingMessage) error {
-	wsMessage := websocket.Message{
-		Type: websocket.SignalingMessage,
-		Data: message,
+// cleanupOldMatches removes matches that are older than 30 minutes
+func (s *SignalingService) cleanupOldMatches() {
+	cutoff := time.Now().Add(-30 * time.Minute)
+
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+
+	var toDelete []string
+	for matchID, match := range s.matches {
+		if match.CreatedAt.Before(cutoff) && match.Status != MatchStatusActive {
+			toDelete = append(toDelete, matchID)
+		}
 	}
 
-	return s.wsManager.SendMessage(message.ToUser, wsMessage)
+	for _, matchID := range toDelete {
+		match := s.matches[matchID]
+		delete(s.userMatches, match.UserA)
+		delete(s.userMatches, match.UserB)
+		delete(s.matches, matchID)
+		log.Printf("Cleaned up old match %s", matchID)
+	}
+}
+
+// GetMatchStatus returns the current status of a user's match
+func (s *SignalingService) GetMatchStatus(userID string) (MatchStatus, string) {
+	s.mutex.RLock()
+	matchID, exists := s.userMatches[userID]
+	s.mutex.RUnlock()
+
+	if !exists {
+		return "", ""
+	}
+
+	match := s.getMatch(matchID)
+	if match == nil {
+		return "", ""
+	}
+
+	match.mutex.RLock()
+	status := match.Status
+	match.mutex.RUnlock()
+
+	return status, matchID
+}
+
+// EndMatch manually ends a match (e.g., when a user disconnects)
+func (s *SignalingService) EndMatch(userID string) {
+	s.mutex.RLock()
+	matchID, exists := s.userMatches[userID]
+	s.mutex.RUnlock()
+
+	if !exists {
+		return
+	}
+
+	match := s.getMatch(matchID)
+	if match == nil {
+		return
+	}
+
+	match.mutex.Lock()
+	match.Status = MatchStatusCompleted
+	match.mutex.Unlock()
+
+	log.Printf("Match %s ended by user %s", matchID, userID)
+	s.cleanupMatch(matchID)
 }
