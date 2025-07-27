@@ -53,6 +53,7 @@ The matching algorithm pairs users where:
 
 ## Development Commands
 - Start services: `docker-compose up -d`
+- Start Redis only: `docker-compose up -d redis`
 - Start server: `go run main.go`
 - Install dependencies: `go mod tidy`
 - Format code: `go fmt ./...`
@@ -64,6 +65,7 @@ The matching algorithm pairs users where:
 - Test with verbose output: `go test -v ./...`
 - Stop services: `docker-compose down`
 - Server runs on: `http://localhost:8080`
+- Redis runs on: `localhost:6379`
 
 ## Testing Guidelines
 - **Manual Testing**: Do NOT run manual tests using the test scripts when making code changes. Only run unit tests with `go test ./...`
@@ -81,10 +83,11 @@ Located in `test/scripts/` directory for local development testing:
 **Prerequisites for WebSocket tests**: Install `websocat` with `brew install websocat`
 
 ## Dependencies
-- Go version: 1.23.2
+- Go version: 1.23.2 (minimum 1.19 required)
 - Key packages: Chi router (v5.2.2), PostgreSQL driver (pgx/v5), Redis client (v9.11.0), Gorilla WebSocket (v1.5.3), Goose migrations (v3.24.3), UUID generation (google/uuid)
 - External services: PostgreSQL (local development), Redis 7 (containerized via Docker)
 - No external linting tools configured - use standard Go tooling
+- Docker and Docker Compose required for Redis container
 
 ## Database Configuration
 **PostgreSQL Environment Variables** (defaults for local development):
@@ -195,6 +198,12 @@ The system uses Redis for real-time matchmaking with the following patterns:
 - ❌ No formal test coverage exists (only manual test scripts)
 
 ## Important Reminder Instructions
+Do what has been asked; nothing more, nothing less.
+NEVER create files unless they're absolutely necessary for achieving your goal.
+ALWAYS prefer editing an existing file to creating a new one.
+NEVER proactively create documentation files (*.md) or README files. Only create documentation files if explicitly requested by the User.
+
+# important-instruction-reminders
 Do what has been asked; nothing more, nothing less.
 NEVER create files unless they're absolutely necessary for achieving your goal.
 ALWAYS prefer editing an existing file to creating a new one.
